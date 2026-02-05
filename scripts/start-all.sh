@@ -25,6 +25,10 @@ echo "Step 3/4: Starting CL1 (Currency Layer)..."
 $SCRIPT_DIR/start-cl1.sh
 echo ""
 
+echo "Step 3.5: Bootstrapping CL1 currency (sending initial transaction)..."
+$SCRIPT_DIR/bootstrap-currency.sh || echo "Warning: Bootstrap failed, CL1 may not produce blocks until a transaction is sent"
+echo ""
+
 echo "Step 4/4: Starting DL1 (Data Layer)..."
 $SCRIPT_DIR/start-dl1.sh
 echo ""
