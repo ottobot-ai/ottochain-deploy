@@ -52,14 +52,16 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: ${{ env.JAVA_VERSION }}
-          cache: 'sbt'
+          
+      - name: Setup sbt
+        uses: sbt/setup-sbt@v1
           
       - name: Build tessellation SDK
         working-directory: tessellation
         run: |
           # Fix compile error in v4.0.0-rc.2
           FILE="modules/node-shared/src/main/scala/org/tessellation/node/shared/infrastructure/snapshot/GlobalSnapshotStateChannelEventsProcessor.scala"
-          if grep -q "def make\[F\[_\]\]" "$FILE"; then
+          if [ -f "$FILE" ] && grep -q "def make\[F\[_\]\]" "$FILE"; then
             sed -i 's/def make\[F\[_\]\]/def make[F[_]]: GlobalSnapshotStateChannelEventsProcessor[F]/g' "$FILE"
           fi
           sbt sdk/publishLocal
