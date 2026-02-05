@@ -1,0 +1,531 @@
+name: Release from Scratch
+
+on:
+  push:
+    branches:
+      - release/scratch
+  workflow_dispatch:
+    inputs:
+      wipe_state:
+        description: 'Wipe all state (genesis reset)'
+        required: true
+        default: 'true'
+        type: boolean
+      skip_build:
+        description: 'Skip image build (use existing)'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  TESSELLATION_VERSION: v4.0.0-rc.2
+  JAVA_VERSION: '21'
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/ottobot-ai/ottochain
+
+jobs:
+  # ============================================
+  # BUILD: Compile JARs and push Docker images
+  # ============================================
+  build:
+    name: Build & Push Images
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.skip_build != 'true' }}
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - name: Checkout ottochain-deploy
+        uses: actions/checkout@v4
+        
+      - name: Checkout ottochain
+        uses: actions/checkout@v4
+        with:
+          repository: ottobot-ai/ottochain
+          path: ottochain
+          
+      - name: Checkout tessellation
+        uses: actions/checkout@v4
+        with:
+          repository: Constellation-Labs/tessellation
+          ref: ${{ env.TESSELLATION_VERSION }}
+          path: tessellation
+          
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: 'sbt'
+          
+      - name: Build tessellation SDK
+        working-directory: tessellation
+        run: |
+          # Fix compile error in v4.0.0-rc.2
+          FILE="modules/node-shared/src/main/scala/org/tessellation/node/shared/infrastructure/snapshot/GlobalSnapshotStateChannelEventsProcessor.scala"
+          if grep -q "def make\[F\[_\]\]" "$FILE"; then
+            sed -i 's/def make\[F\[_\]\]/def make[F[_]]: GlobalSnapshotStateChannelEventsProcessor[F]/g' "$FILE"
+          fi
+          sbt sdk/publishLocal
+          
+      - name: Build metagraph JARs
+        working-directory: ottochain
+        run: sbt assembly
+          
+      - name: Collect JARs
+        run: |
+          mkdir -p build
+          cp ottochain/modules/l0/target/scala-2.13/ottochain-l0-assembly-*.jar build/metagraph-l0.jar
+          cp ottochain/modules/l1/target/scala-2.13/ottochain-l1-assembly-*.jar build/currency-l1.jar
+          cp ottochain/modules/data-l1/target/scala-2.13/ottochain-data-l1-assembly-*.jar build/data-l1.jar
+          ls -la build/
+          
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      - name: Build and push GL0 image
+        uses: docker/build-push-action@v5
+        with:
+          context: docker/metagraph
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-gl0:latest
+            ${{ env.IMAGE_PREFIX }}-gl0:${{ github.sha }}
+          build-args: |
+            JAR_FILE=../../build/metagraph-l0.jar
+            COMPONENT=gl0
+            
+      - name: Build and push ML0 image
+        uses: docker/build-push-action@v5
+        with:
+          context: docker/metagraph
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-ml0:latest
+            ${{ env.IMAGE_PREFIX }}-ml0:${{ github.sha }}
+          build-args: |
+            JAR_FILE=../../build/metagraph-l0.jar
+            COMPONENT=ml0
+            
+      - name: Build and push CL1 image
+        uses: docker/build-push-action@v5
+        with:
+          context: docker/metagraph
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-cl1:latest
+            ${{ env.IMAGE_PREFIX }}-cl1:${{ github.sha }}
+          build-args: |
+            JAR_FILE=../../build/currency-l1.jar
+            COMPONENT=cl1
+            
+      - name: Build and push DL1 image
+        uses: docker/build-push-action@v5
+        with:
+          context: docker/metagraph
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-dl1:latest
+            ${{ env.IMAGE_PREFIX }}-dl1:${{ github.sha }}
+          build-args: |
+            JAR_FILE=../../build/data-l1.jar
+            COMPONENT=dl1
+
+  # ============================================
+  # DEPLOY: Stop, wipe, pull, start metagraph
+  # ============================================
+  deploy:
+    name: Deploy Metagraph
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: always() && (needs.build.result == 'success' || github.event.inputs.skip_build == 'true')
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/hetzner
+          chmod 600 ~/.ssh/hetzner
+          
+          for host in node1 node2 node3 services; do
+            case $host in
+              node1) ip="${{ secrets.HETZNER_NODE1_IP }}" ;;
+              node2) ip="${{ secrets.HETZNER_NODE2_IP }}" ;;
+              node3) ip="${{ secrets.HETZNER_NODE3_IP }}" ;;
+              services) ip="${{ secrets.HETZNER_SERVICES_IP }}" ;;
+            esac
+            cat >> ~/.ssh/config << EOF
+          Host $host
+            HostName $ip
+            User root
+            IdentityFile ~/.ssh/hetzner
+            StrictHostKeyChecking no
+          EOF
+          done
+          
+      - name: Stop all containers
+        run: |
+          echo "=== Stopping all containers ==="
+          for host in node1 node2 node3 services; do
+            echo "Stopping $host..."
+            ssh $host 'docker compose -f /opt/ottochain/docker-compose.yml down 2>/dev/null || docker stop $(docker ps -q) 2>/dev/null || true' &
+          done
+          wait
+          echo "All stopped"
+          
+      - name: Wipe state
+        if: ${{ github.event.inputs.wipe_state != 'false' }}
+        run: |
+          echo "=== Wiping state ==="
+          for host in node1 node2 node3; do
+            ssh $host 'docker volume rm $(docker volume ls -q | grep ottochain) 2>/dev/null || true'
+          done
+          ssh services 'docker volume rm $(docker volume ls -q | grep postgres) 2>/dev/null || true'
+          echo "State wiped"
+          
+      - name: Deploy compose files
+        run: |
+          echo "=== Deploying docker-compose files ==="
+          for host in node1 node2 node3; do
+            ssh $host 'mkdir -p /opt/ottochain'
+            scp docker/metagraph/docker-compose.yml $host:/opt/ottochain/
+            scp docker/metagraph/entrypoint.sh $host:/opt/ottochain/
+          done
+          scp -r services/ services:/opt/ottochain-services/
+          
+      - name: Login to GHCR on nodes
+        run: |
+          for host in node1 node2 node3 services; do
+            ssh $host "echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin"
+          done
+          
+      - name: Pull images on all nodes
+        run: |
+          VERSION="${{ github.sha }}"
+          for host in node1 node2 node3; do
+            echo "Pulling images on $host..."
+            ssh $host "docker pull ghcr.io/ottobot-ai/ottochain-gl0:$VERSION" &
+            ssh $host "docker pull ghcr.io/ottobot-ai/ottochain-ml0:$VERSION" &
+            ssh $host "docker pull ghcr.io/ottobot-ai/ottochain-cl1:$VERSION" &
+            ssh $host "docker pull ghcr.io/ottobot-ai/ottochain-dl1:$VERSION" &
+          done
+          wait
+          echo "Images pulled"
+          
+      - name: Create genesis snapshot (node1)
+        if: ${{ github.event.inputs.wipe_state != 'false' }}
+        run: |
+          VERSION="${{ github.sha }}"
+          ssh node1 << 'SCRIPT'
+          cd /opt/ottochain
+          mkdir -p data/ml0
+          
+          # Create genesis CSV
+          echo "DAG0JjJkmwDn8s9QTyykPRqnvkagxSkrLfDG1mYz,1000000000000000" > data/genesis.csv
+          
+          # Run create-genesis
+          docker run --rm \
+            -v /opt/ottochain/keys:/keys:ro \
+            -v /opt/ottochain/data/ml0:/data \
+            -e CL_KEYSTORE=/keys/cl-keystore.p12 \
+            -e CL_KEYSTORE_PASSWORD="${{ secrets.CL_KEYSTORE_PASSWORD }}" \
+            -e CL_KEY_ALIAS=cl-keystore \
+            ghcr.io/ottobot-ai/ottochain-ml0:$VERSION \
+            create-genesis /data/genesis.csv
+            
+          ls -la data/ml0/
+          SCRIPT
+          
+      - name: Start GL0 genesis (node1)
+        run: |
+          VERSION="${{ github.sha }}"
+          NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
+          
+          ssh node1 << SCRIPT
+          cd /opt/ottochain
+          export VERSION=$VERSION
+          export CL_KEYSTORE_PASSWORD="${{ secrets.CL_KEYSTORE_PASSWORD }}"
+          export GENESIS_IP=$NODE1_IP
+          
+          docker compose --profile genesis up -d gl0-genesis
+          SCRIPT
+          
+          echo "Waiting for GL0 to become Ready..."
+          for i in {1..60}; do
+            state=$(ssh node1 'curl -s http://localhost:9000/node/info | jq -r .state' 2>/dev/null || echo "")
+            if [ "$state" = "Ready" ]; then
+              echo "GL0 is Ready"
+              break
+            fi
+            echo "Waiting... ($i/60) state=$state"
+            sleep 5
+          done
+          
+      - name: Get GL0 peer ID
+        id: gl0
+        run: |
+          GL0_ID=$(ssh node1 'curl -s http://localhost:9000/node/info | jq -r .id')
+          echo "id=$GL0_ID" >> $GITHUB_OUTPUT
+          echo "GL0 ID: $GL0_ID"
+          
+      - name: Start GL0 validators (node2, node3)
+        run: |
+          VERSION="${{ github.sha }}"
+          GENESIS_IP="${{ secrets.HETZNER_NODE1_IP }}"
+          GL0_ID="${{ steps.gl0.outputs.id }}"
+          
+          for host in node2 node3; do
+            ssh $host << SCRIPT
+            cd /opt/ottochain
+            cat > .env << EOF
+          VERSION=$VERSION
+          CL_KEYSTORE_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }}
+          GENESIS_IP=$GENESIS_IP
+          GENESIS_GL0_ID=$GL0_ID
+          EOF
+            docker compose --profile validator up -d gl0-validator
+          SCRIPT
+          done
+          
+          echo "Waiting for GL0 cluster (3 nodes)..."
+          for i in {1..60}; do
+            count=$(ssh node1 'curl -s http://localhost:9000/cluster/info | jq length' 2>/dev/null || echo "0")
+            if [ "$count" = "3" ]; then
+              echo "GL0 cluster: $count nodes"
+              break
+            fi
+            echo "Waiting... ($i/60) nodes=$count"
+            sleep 5
+          done
+          
+      - name: Start ML0 (node1)
+        run: |
+          VERSION="${{ github.sha }}"
+          GENESIS_IP="${{ secrets.HETZNER_NODE1_IP }}"
+          GL0_ID="${{ steps.gl0.outputs.id }}"
+          
+          ssh node1 << SCRIPT
+          cd /opt/ottochain
+          cat > .env << EOF
+          VERSION=$VERSION
+          CL_KEYSTORE_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }}
+          GENESIS_IP=$GENESIS_IP
+          GENESIS_GL0_ID=$GL0_ID
+          EOF
+          docker compose --profile genesis up -d ml0
+          SCRIPT
+          
+          echo "Waiting for ML0 to become Ready..."
+          for i in {1..60}; do
+            state=$(ssh node1 'curl -s http://localhost:9200/node/info | jq -r .state' 2>/dev/null || echo "")
+            if [ "$state" = "Ready" ]; then
+              echo "ML0 is Ready"
+              break
+            fi
+            echo "Waiting... ($i/60) state=$state"
+            sleep 5
+          done
+          
+      - name: Get ML0 peer ID
+        id: ml0
+        run: |
+          ML0_ID=$(ssh node1 'curl -s http://localhost:9200/node/info | jq -r .id')
+          echo "id=$ML0_ID" >> $GITHUB_OUTPUT
+          echo "ML0 ID: $ML0_ID"
+          
+      - name: Start CL1 (all nodes)
+        run: |
+          VERSION="${{ github.sha }}"
+          GENESIS_IP="${{ secrets.HETZNER_NODE1_IP }}"
+          GL0_ID="${{ steps.gl0.outputs.id }}"
+          ML0_ID="${{ steps.ml0.outputs.id }}"
+          
+          for host in node1 node2 node3; do
+            ssh $host << SCRIPT
+            cd /opt/ottochain
+            cat > .env << EOF
+          VERSION=$VERSION
+          CL_KEYSTORE_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }}
+          GENESIS_IP=$GENESIS_IP
+          GENESIS_GL0_ID=$GL0_ID
+          ML0_ID=$ML0_ID
+          TOKEN_ID=DAG0JjJkmwDn8s9QTyykPRqnvkagxSkrLfDG1mYz
+          EOF
+            docker compose up -d cl1
+          SCRIPT
+          done
+          
+          sleep 30
+          echo "Waiting for CL1 cluster..."
+          for i in {1..60}; do
+            count=$(ssh node1 'curl -s http://localhost:9300/cluster/info | jq length' 2>/dev/null || echo "0")
+            if [ "$count" = "3" ]; then
+              echo "CL1 cluster: $count nodes"
+              break
+            fi
+            echo "Waiting... ($i/60) nodes=$count"
+            sleep 5
+          done
+          
+      - name: Start DL1 (all nodes)
+        run: |
+          VERSION="${{ github.sha }}"
+          GENESIS_IP="${{ secrets.HETZNER_NODE1_IP }}"
+          GL0_ID="${{ steps.gl0.outputs.id }}"
+          ML0_ID="${{ steps.ml0.outputs.id }}"
+          
+          for host in node1 node2 node3; do
+            ssh $host << SCRIPT
+            cd /opt/ottochain
+            docker compose up -d dl1
+          SCRIPT
+          done
+          
+          sleep 30
+          echo "Waiting for DL1 cluster..."
+          for i in {1..60}; do
+            count=$(ssh node1 'curl -s http://localhost:9400/cluster/info | jq length' 2>/dev/null || echo "0")
+            if [ "$count" = "3" ]; then
+              echo "DL1 cluster: $count nodes"
+              break
+            fi
+            echo "Waiting... ($i/60) nodes=$count"
+            sleep 5
+          done
+
+  # ============================================
+  # SERVICES: Deploy indexer, explorer, bridge
+  # ============================================
+  services:
+    name: Deploy Services
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: always() && needs.deploy.result == 'success'
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/hetzner
+          chmod 600 ~/.ssh/hetzner
+          cat >> ~/.ssh/config << EOF
+          Host services
+            HostName ${{ secrets.HETZNER_SERVICES_IP }}
+            User root
+            IdentityFile ~/.ssh/hetzner
+            StrictHostKeyChecking no
+          EOF
+          
+      - name: Deploy services
+        run: |
+          METAGRAPH_IP="${{ secrets.HETZNER_NODE1_IP }}"
+          
+          ssh services << SCRIPT
+          cd /opt/ottochain-services
+          
+          cat > .env << EOF
+          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          DATABASE_URL=postgresql://ottochain:${{ secrets.POSTGRES_PASSWORD }}@postgres:5432/ottochain
+          METAGRAPH_ML0_URL=http://$METAGRAPH_IP:9200
+          METAGRAPH_DL1_URL=http://$METAGRAPH_IP:9400
+          PORT=3030
+          EOF
+          
+          docker compose pull
+          docker compose up -d postgres
+          sleep 15
+          docker compose run --rm gateway npx prisma migrate deploy || true
+          docker compose up -d
+          
+          echo "Services started:"
+          docker compose ps
+          SCRIPT
+          
+      - name: Trigger initial index
+        run: |
+          sleep 30
+          ORDINAL=$(ssh services "curl -s http://${{ secrets.HETZNER_NODE1_IP }}:9200/snapshots/latest | jq -r '.ordinal'" || echo "1")
+          ssh services "curl -X POST http://localhost:3031/webhook/snapshot -H 'Content-Type: application/json' -d '{\"ordinal\": $ORDINAL}'" || true
+
+  # ============================================
+  # HEALTH CHECK
+  # ============================================
+  health-check:
+    name: Health Check
+    runs-on: ubuntu-latest
+    needs: [services]
+    if: always()
+    
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/hetzner
+          chmod 600 ~/.ssh/hetzner
+          cat >> ~/.ssh/config << EOF
+          Host node1
+            HostName ${{ secrets.HETZNER_NODE1_IP }}
+            User root
+            IdentityFile ~/.ssh/hetzner
+            StrictHostKeyChecking no
+          Host services
+            HostName ${{ secrets.HETZNER_SERVICES_IP }}
+            User root
+            IdentityFile ~/.ssh/hetzner
+            StrictHostKeyChecking no
+          EOF
+          
+      - name: Run health checks
+        run: |
+          echo "=== OttoChain Health Check ==="
+          
+          GL0_STATE=$(ssh node1 'curl -s http://localhost:9000/node/info | jq -r .state' || echo "UNKNOWN")
+          GL0_CLUSTER=$(ssh node1 'curl -s http://localhost:9000/cluster/info | jq length' || echo "0")
+          
+          ML0_STATE=$(ssh node1 'curl -s http://localhost:9200/node/info | jq -r .state' || echo "UNKNOWN")
+          ML0_ORDINAL=$(ssh node1 'curl -s http://localhost:9200/snapshots/latest | jq .ordinal' || echo "0")
+          
+          CL1_CLUSTER=$(ssh node1 'curl -s http://localhost:9300/cluster/info | jq length' || echo "0")
+          DL1_CLUSTER=$(ssh node1 'curl -s http://localhost:9400/cluster/info | jq length' || echo "0")
+          
+          EXPLORER=$(ssh services 'curl -s -o /dev/null -w "%{http_code}" http://localhost:8080' || echo "000")
+          
+          echo ""
+          echo "GL0: $GL0_STATE (cluster: $GL0_CLUSTER)"
+          echo "ML0: $ML0_STATE (ordinal: $ML0_ORDINAL)"
+          echo "CL1: cluster=$CL1_CLUSTER"
+          echo "DL1: cluster=$DL1_CLUSTER"
+          echo "Explorer: HTTP $EXPLORER"
+          
+          # Generate summary
+          echo "## 🚀 Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| GL0 | $GL0_STATE ($GL0_CLUSTER nodes) |" >> $GITHUB_STEP_SUMMARY
+          echo "| ML0 | $ML0_STATE (ordinal $ML0_ORDINAL) |" >> $GITHUB_STEP_SUMMARY
+          echo "| CL1 | $CL1_CLUSTER nodes |" >> $GITHUB_STEP_SUMMARY
+          echo "| DL1 | $DL1_CLUSTER nodes |" >> $GITHUB_STEP_SUMMARY
+          echo "| Explorer | HTTP $EXPLORER |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Explorer URL**: http://${{ secrets.HETZNER_SERVICES_IP }}:8080" >> $GITHUB_STEP_SUMMARY
+          
+          # Fail if not healthy
+          if [ "$GL0_CLUSTER" != "3" ] || [ "$CL1_CLUSTER" != "3" ] || [ "$DL1_CLUSTER" != "3" ]; then
+            echo "::error::Cluster not fully formed"
+            exit 1
+          fi

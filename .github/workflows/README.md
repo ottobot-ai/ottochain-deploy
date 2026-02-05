@@ -1,0 +1,159 @@
+# OttoChain CI/CD Workflows
+
+## release-scratch.yml
+
+Automated deployment pipeline that builds Docker images and deploys OttoChain from scratch.
+
+### Architecture
+
+```
+┌─────────────────┐     ┌─────────────────┐
+│   GitHub CI     │────▶│  ghcr.io        │
+│   Build JARs    │     │  Docker Images  │
+└─────────────────┘     └────────┬────────┘
+                                 │
+        ┌────────────────────────┼────────────────────────┐
+        ▼                        ▼                        ▼
+┌───────────────┐      ┌───────────────┐       ┌───────────────┐
+│    Node 1     │      │    Node 2     │       │    Node 3     │
+│  (genesis)    │      │  (validator)  │       │  (validator)  │
+│ GL0 ML0 CL1   │      │  GL0 CL1 DL1  │       │  GL0 CL1 DL1  │
+│     DL1       │      │               │       │               │
+└───────────────┘      └───────────────┘       └───────────────┘
+```
+
+### Docker Images
+
+Built and pushed to `ghcr.io/ottobot-ai/`:
+- `ottochain-gl0` - Global L0
+- `ottochain-ml0` - Metagraph L0  
+- `ottochain-cl1` - Currency L1
+- `ottochain-dl1` - Data L1
+
+### Triggers
+
+1. **Push to `release/scratch` branch** - Automatic full deployment
+2. **Manual dispatch** - Via GitHub Actions UI with options:
+   - `wipe_state`: Reset all state (default: true)
+   - `skip_build`: Skip image build, use existing (default: false)
+
+### Required Secrets
+
+Configure these in GitHub repo settings → Secrets and variables → Actions:
+
+| Secret | Description |
+|--------|-------------|
+| `HETZNER_SSH_KEY` | Private SSH key for root access to all nodes |
+| `HETZNER_NODE1_IP` | Genesis node IP (e.g., `5.78.90.207`) |
+| `HETZNER_NODE2_IP` | Second metagraph node IP |
+| `HETZNER_NODE3_IP` | Third metagraph node IP |
+| `HETZNER_SERVICES_IP` | Services node IP (indexer, explorer, bridge) |
+| `CL_KEYSTORE_PASSWORD` | Keystore password for all nodes |
+| `POSTGRES_PASSWORD` | Database password for services |
+| `GITHUB_TOKEN` | Auto-provided, used for GHCR push/pull |
+
+### Pipeline Stages
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  1. BUILD                                                   │
+│     • Checkout tessellation (v4.0.0-rc.2)                  │
+│     • Build SDK locally                                     │
+│     • Build metagraph JARs                                  │
+│     • Upload artifacts                                      │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│  2. DEPLOY                                                  │
+│     • Stop all containers on all nodes                      │
+│     • Wipe state (if requested)                             │
+│     • Deploy JARs to all nodes                              │
+│     • Start GL0 (genesis) → wait for Ready                  │
+│     • Start GL0 (join) on nodes 2,3 → wait for 3-node      │
+│     • Start ML0 (create-genesis + run-genesis)              │
+│     • Start CL1 (3 nodes) → wait for cluster                │
+│     • Start DL1 (3 nodes) → wait for cluster                │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│  3. SERVICES                                                │
+│     • Deploy docker-compose services                        │
+│     • Run Prisma migrations                                 │
+│     • Start indexer, explorer, bridge                       │
+│     • Trigger initial index                                 │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│  4. HEALTH CHECK                                            │
+│     • Verify all nodes Ready                                │
+│     • Verify cluster sizes (3 each)                         │
+│     • Check explorer responding                             │
+│     • Generate deployment summary                           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Usage
+
+#### Full deployment (from scratch):
+```bash
+git checkout -b release/scratch
+git push origin release/scratch --force
+```
+
+#### Manual deployment with options:
+1. Go to Actions → "Release from Scratch"
+2. Click "Run workflow"
+3. Select options (wipe_state, skip_build)
+4. Click "Run workflow"
+
+### Node Directory Structure
+
+The pipeline expects this structure on each node:
+
+```
+/opt/ottochain/
+├── jars/              # JAR files (deployed by CI)
+│   ├── metagraph-l0.jar
+│   ├── currency-l1.jar
+│   └── data-l1.jar
+├── keys/              # Keystores (pre-configured)
+│   └── cl-keystore.p12
+└── data/              # Runtime data (wiped on scratch deploy)
+    ├── gl0/
+    ├── ml0/
+    ├── cl1/
+    └── dl1/
+```
+
+### Services Node Structure
+
+```
+/opt/ottochain-services/
+├── docker-compose.yml
+├── .env               # Generated by CI
+└── (other service files)
+```
+
+### Troubleshooting
+
+**Build fails on tessellation:**
+- The pipeline patches a known compile error in v4.0.0-rc.2
+- If it still fails, check if tessellation version changed
+
+**Nodes don't cluster:**
+- Check if SSH keys are correct
+- Verify ports are open (9000-9402)
+- Check container logs: `ssh node1 'docker logs gl0'`
+
+**Services don't start:**
+- Check postgres is running: `ssh services 'docker compose ps'`
+- Check migrations ran: `ssh services 'docker compose logs gateway'`
+
+### Version Alignment
+
+Critical: All components must use matching versions:
+- tessellation-sdk: v4.0.0-rc.2
+- metakit: depends on tessellation-sdk
+- ottochain: depends on metakit
+
+The pipeline builds everything from source to ensure alignment.
