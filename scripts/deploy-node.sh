@@ -47,17 +47,18 @@ ssh $SSH_OPTS root@$NODE_IP "mkdir -p $REMOTE_DIR/{data,logs,jars}"
 
 # Copy docker-compose and env file
 echo "Copying Docker configuration..."
-scp $SSH_OPTS "$SCRIPT_DIR/../../docker/docker-compose.yml" root@$NODE_IP:$REMOTE_DIR/
-scp $SSH_OPTS "$SCRIPT_DIR/../../docker/nodes/node${NODE_NUM}.env" root@$NODE_IP:$REMOTE_DIR/.env
+REPO_ROOT="$SCRIPT_DIR/.."
+scp $SSH_OPTS "$REPO_ROOT/docker/metagraph/docker-compose.yml" root@$NODE_IP:$REMOTE_DIR/
+scp $SSH_OPTS "$REPO_ROOT/docker/metagraph/nodes/node${NODE_NUM}.env" root@$NODE_IP:$REMOTE_DIR/.env
 
 # Copy keystore if not exists
-if [[ -f "$SCRIPT_DIR/../../keys/node${NODE_NUM}.p12" ]]; then
-    scp $SSH_OPTS "$SCRIPT_DIR/../../keys/node${NODE_NUM}.p12" root@$NODE_IP:$REMOTE_DIR/key.p12
+if [[ -f "$REPO_ROOT/keys/node${NODE_NUM}.p12" ]]; then
+    scp $SSH_OPTS "$REPO_ROOT/keys/node${NODE_NUM}.p12" root@$NODE_IP:$REMOTE_DIR/keys/key.p12
 fi
 
 # Copy genesis.csv if exists
-if [[ -f "$SCRIPT_DIR/../../genesis.csv" ]]; then
-    scp $SSH_OPTS "$SCRIPT_DIR/../../genesis.csv" root@$NODE_IP:$REMOTE_DIR/
+if [[ -f "$REPO_ROOT/genesis.csv" ]]; then
+    scp $SSH_OPTS "$REPO_ROOT/genesis.csv" root@$NODE_IP:$REMOTE_DIR/genesis/
 fi
 
 # If genesis mode, wipe data
@@ -66,13 +67,15 @@ if [[ "$GENESIS_MODE" == "true" ]]; then
     ssh $SSH_OPTS root@$NODE_IP "cd $REMOTE_DIR && rm -rf data/* logs/*"
 fi
 
-# Export metagraph image (or pull from registry)
-if [[ -n "$DOCKER_REGISTRY" ]]; then
-    echo "Pulling image from registry..."
-    ssh $SSH_OPTS root@$NODE_IP "docker pull $DOCKER_REGISTRY/ottochain:${VERSION:-latest}"
-else
-    echo "Exporting and transferring Docker image..."
-    docker save ottochain:${VERSION:-latest} | ssh $SSH_OPTS root@$NODE_IP "docker load"
+# Copy JARs if they exist locally
+JARS_DIR="${JARS_DIR:-$REPO_ROOT/docker/jars}"
+if [[ -d "$JARS_DIR" ]] && ls "$JARS_DIR"/*.jar 1>/dev/null 2>&1; then
+    echo "Copying JARs..."
+    scp $SSH_OPTS "$JARS_DIR"/*.jar root@$NODE_IP:$REMOTE_DIR/jars/
 fi
+
+# Pull base image
+echo "Pulling base Docker image..."
+ssh $SSH_OPTS root@$NODE_IP "docker pull eclipse-temurin:21-jdk"
 
 echo "✓ Node $NODE_NUM deployed"
