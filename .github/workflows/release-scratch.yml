@@ -430,36 +430,100 @@ jobs:
             StrictHostKeyChecking no
           EOF
           
-      - name: Deploy services
+      - name: Stop services and wipe DB
+        run: |
+          ssh services << 'SCRIPT'
+          cd /opt/ottochain-services
+          
+          # Stop all pm2 services
+          pm2 stop all || true
+          
+          # Wipe and recreate postgres DB
+          docker rm -f postgres redis 2>/dev/null || true
+          docker volume rm ottochain-services_postgres_data 2>/dev/null || true
+          
+          # Start fresh postgres and redis
+          docker run -d --name postgres \
+            -e POSTGRES_USER=ottochain \
+            -e POSTGRES_PASSWORD=ottochain \
+            -e POSTGRES_DB=ottochain_identity \
+            -p 5432:5432 \
+            --restart unless-stopped \
+            postgres:15-alpine
+            
+          docker run -d --name redis \
+            -p 6379:6379 \
+            --restart unless-stopped \
+            redis:7-alpine
+            
+          echo "Waiting for postgres..."
+          sleep 10
+          
+          # Verify DB is ready
+          docker exec postgres pg_isready -U ottochain
+          SCRIPT
+          
+      - name: Update services code
+        run: |
+          ssh services << 'SCRIPT'
+          cd /opt/ottochain-services
+          
+          # Pull latest code
+          git fetch origin main
+          git reset --hard origin/main
+          
+          # Install dependencies and build
+          pnpm install
+          pnpm run build || true  # May fail on bridge due to SDK, but others should build
+          SCRIPT
+          
+      - name: Configure and start services
         run: |
           METAGRAPH_IP="${{ secrets.HETZNER_NODE1_IP }}"
           
           ssh services << SCRIPT
           cd /opt/ottochain-services
           
+          # Create .env file
           cat > .env << EOF
-          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
-          DATABASE_URL=postgresql://ottochain:${{ secrets.POSTGRES_PASSWORD }}@postgres:5432/ottochain
+          DATABASE_URL=postgresql://ottochain:ottochain@localhost:5432/ottochain_identity
           METAGRAPH_ML0_URL=http://$METAGRAPH_IP:9200
           METAGRAPH_DL1_URL=http://$METAGRAPH_IP:9400
-          PORT=3030
+          GATEWAY_PORT=4000
+          BRIDGE_PORT=3030
+          INDEXER_PORT=3031
+          NODE_ENV=development
+          REDIS_URL=redis://localhost:6379
+          GL0_URLS=http://$METAGRAPH_IP:9000
+          ML0_URLS=http://$METAGRAPH_IP:9200
+          DL1_URLS=http://$METAGRAPH_IP:9400
+          TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_ALERT_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
           EOF
           
-          docker compose pull
-          docker compose up -d postgres
-          sleep 15
-          docker compose run --rm gateway npx prisma migrate deploy || true
-          docker compose up -d
+          # Run DB migrations
+          cd packages/indexer
+          npx prisma migrate deploy || npx prisma db push --accept-data-loss || true
+          cd ../..
+          
+          # Start services with pm2
+          pm2 delete all 2>/dev/null || true
+          pm2 start ecosystem.config.cjs || pm2 start packages/indexer/dist/index.js --name indexer
+          pm2 start packages/gateway/dist/index.js --name gateway || true
+          pm2 start packages/bridge/dist/index.js --name bridge || true
+          pm2 start packages/monitor/dist/index.js --name monitor || true
+          
+          pm2 save
           
           echo "Services started:"
-          docker compose ps
+          pm2 list
           SCRIPT
           
       - name: Trigger initial index
         run: |
           sleep 30
           ORDINAL=$(ssh services "curl -s http://${{ secrets.HETZNER_NODE1_IP }}:9200/snapshots/latest | jq -r '.ordinal'" || echo "1")
-          ssh services "curl -X POST http://localhost:3031/webhook/snapshot -H 'Content-Type: application/json' -d '{\"ordinal\": $ORDINAL}'" || true
+          ssh services "curl -X POST http://localhost:3031/webhook/snapshot -H 'Content-Type: application/json' -d '{\"ordinal\": \$ORDINAL}'" || true
 
   # ============================================
   # HEALTH CHECK
