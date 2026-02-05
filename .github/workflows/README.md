@@ -2,14 +2,40 @@
 
 ## release-scratch.yml
 
-Automated deployment pipeline that builds and deploys OttoChain from scratch (genesis reset).
+Automated deployment pipeline that builds Docker images and deploys OttoChain from scratch.
+
+### Architecture
+
+```
+┌─────────────────┐     ┌─────────────────┐
+│   GitHub CI     │────▶│  ghcr.io        │
+│   Build JARs    │     │  Docker Images  │
+└─────────────────┘     └────────┬────────┘
+                                 │
+        ┌────────────────────────┼────────────────────────┐
+        ▼                        ▼                        ▼
+┌───────────────┐      ┌───────────────┐       ┌───────────────┐
+│    Node 1     │      │    Node 2     │       │    Node 3     │
+│  (genesis)    │      │  (validator)  │       │  (validator)  │
+│ GL0 ML0 CL1   │      │  GL0 CL1 DL1  │       │  GL0 CL1 DL1  │
+│     DL1       │      │               │       │               │
+└───────────────┘      └───────────────┘       └───────────────┘
+```
+
+### Docker Images
+
+Built and pushed to `ghcr.io/ottobot-ai/`:
+- `ottochain-gl0` - Global L0
+- `ottochain-ml0` - Metagraph L0  
+- `ottochain-cl1` - Currency L1
+- `ottochain-dl1` - Data L1
 
 ### Triggers
 
 1. **Push to `release/scratch` branch** - Automatic full deployment
 2. **Manual dispatch** - Via GitHub Actions UI with options:
    - `wipe_state`: Reset all state (default: true)
-   - `skip_build`: Skip JAR build, use existing (default: false)
+   - `skip_build`: Skip image build, use existing (default: false)
 
 ### Required Secrets
 
@@ -24,6 +50,7 @@ Configure these in GitHub repo settings → Secrets and variables → Actions:
 | `HETZNER_SERVICES_IP` | Services node IP (indexer, explorer, bridge) |
 | `CL_KEYSTORE_PASSWORD` | Keystore password for all nodes |
 | `POSTGRES_PASSWORD` | Database password for services |
+| `GITHUB_TOKEN` | Auto-provided, used for GHCR push/pull |
 
 ### Pipeline Stages
 
