@@ -75,9 +75,9 @@ jobs:
       - name: Collect JARs
         run: |
           mkdir -p build
-          # Tessellation JARs
-          cp tessellation/modules/dag-l0/target/scala-2.13/dag-l0-assembly-*.jar build/dag-l0.jar
-          cp tessellation/modules/dag-l1/target/scala-2.13/dag-l1-assembly-*.jar build/dag-l1.jar
+          # Tessellation JARs (named tessellation-dag-l0-assembly-*.jar)
+          cp tessellation/modules/dag-l0/target/scala-2.13/tessellation-dag-l0-assembly-*.jar build/dag-l0.jar
+          cp tessellation/modules/dag-l1/target/scala-2.13/tessellation-dag-l1-assembly-*.jar build/dag-l1.jar
           # Metagraph JARs
           cp ottochain/modules/l0/target/scala-2.13/ottochain-l0-assembly-*.jar build/metagraph-l0.jar
           cp ottochain/modules/l1/target/scala-2.13/ottochain-l1-assembly-*.jar build/currency-l1.jar
