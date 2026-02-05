@@ -1,154 +1,245 @@
-# OttoChain Metagraph Node Stack
-# Deploy on each metagraph node (node1, node2, node3)
+# OttoChain Metagraph - Full 5-Layer Stack
+# Each node runs all 5 layers. Use profiles for genesis vs validator.
 #
-# Usage:
-#   # Genesis node (node1):
-#   docker compose --profile genesis up -d
+# Usage on node1 (genesis):
+#   NODE_IP=5.78.90.207 docker compose --profile genesis up -d
 #
-#   # Validator nodes (node2, node3):
-#   docker compose --profile validator up -d
+# Usage on node2/node3 (validators):
+#   NODE_IP=<this-node-ip> GENESIS_IP=5.78.90.207 docker compose --profile validator up -d
 
 x-common: &common
   restart: unless-stopped
+  network_mode: host
   logging:
     driver: json-file
     options:
       max-size: "100m"
       max-file: "3"
   volumes:
-    - ./keys:/keys:ro
+    - /opt/ottochain/keys:/keys:ro
   environment: &common-env
-    CL_KEYSTORE: /keys/cl-keystore.p12
-    CL_KEYSTORE_PASSWORD: ${CL_KEYSTORE_PASSWORD}
-    CL_KEY_ALIAS: cl-keystore
+    CL_KEYSTORE: /keys/key.p12
+    CL_KEYALIAS: ${CL_KEYALIAS:-alias}
+    CL_PASSWORD: ${CL_PASSWORD}
+    CL_APP_ENV: dev
+    CL_COLLATERAL: "0"
+    CL_EXTERNAL_IP: ${NODE_IP}
     JAVA_OPTS: "-Xmx2g -Xms1g"
 
 services:
   # ============================================
-  # Global L0 - Genesis (only on node1)
+  # GL0 - Global L0 (DAG Consensus)
   # ============================================
   gl0-genesis:
     <<: *common
-    image: ghcr.io/ottobot-ai/ottochain-gl0:${VERSION:-latest}
+    image: ${GL0_IMAGE:-eclipse-temurin:21-jdk}
     container_name: gl0
     profiles: ["genesis"]
-    command: ["run-genesis", "/data/genesis.snapshot"]
-    ports:
-      - "9000:9000"  # Public HTTP
-      - "9001:9001"  # P2P
-      - "9002:9002"  # CLI
+    command: ["java", "-jar", "/jars/dag-l0.jar", "run-genesis", "/genesis/genesis.csv"]
     volumes:
-      - ./keys:/keys:ro
-      - gl0-data:/data
+      - /opt/ottochain/keys:/keys:ro
+      - /opt/ottochain/jars:/jars:ro
+      - /opt/ottochain/genesis:/genesis:ro
     environment:
       <<: *common-env
-      CL_PUBLIC_HTTP_PORT: 9000
-      CL_P2P_HTTP_PORT: 9001
-      CL_CLI_HTTP_PORT: 9002
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:9000/node/info"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+      CL_PUBLIC_HTTP_PORT: "9000"
+      CL_P2P_HTTP_PORT: "9001"
+      CL_CLI_HTTP_PORT: "9002"
 
-  # ============================================
-  # Global L0 - Validator (on node2, node3)
-  # ============================================
   gl0-validator:
     <<: *common
-    image: ghcr.io/ottobot-ai/ottochain-gl0:${VERSION:-latest}
+    image: ${GL0_IMAGE:-eclipse-temurin:21-jdk}
     container_name: gl0
     profiles: ["validator"]
-    command: ["run-validator"]
-    network_mode: host
+    command: ["java", "-jar", "/jars/dag-l0.jar", "run-validator"]
     volumes:
-      - ./keys:/keys:ro
-      - gl0-data:/data
+      - /opt/ottochain/keys:/keys:ro
+      - /opt/ottochain/jars:/jars:ro
     environment:
       <<: *common-env
-      CL_PUBLIC_HTTP_PORT: 9000
-      CL_P2P_HTTP_PORT: 9001
-      CL_CLI_HTTP_PORT: 9002
+      CL_PUBLIC_HTTP_PORT: "9000"
+      CL_P2P_HTTP_PORT: "9001"
+      CL_CLI_HTTP_PORT: "9002"
       CL_GLOBAL_L0_PEER_HTTP_HOST: ${GENESIS_IP}
-      CL_GLOBAL_L0_PEER_HTTP_PORT: 9000
-      CL_GLOBAL_L0_PEER_ID: ${GENESIS_GL0_ID}
+      CL_GLOBAL_L0_PEER_HTTP_PORT: "9000"
+      CL_GLOBAL_L0_PEER_ID: ${GL0_PEER_ID}
 
   # ============================================
-  # Metagraph L0 (only on node1 for now)
+  # GL1 - Global L1 (DAG Transactions)
   # ============================================
-  ml0:
+  gl1-initial:
     <<: *common
-    image: ghcr.io/ottobot-ai/ottochain-ml0:${VERSION:-latest}
+    image: ${GL1_IMAGE:-eclipse-temurin:21-jdk}
+    container_name: gl1
+    profiles: ["genesis"]
+    command: ["java", "-jar", "/jars/dag-l1.jar", "run-initial-validator"]
+    volumes:
+      - /opt/ottochain/keys:/keys:ro
+      - /opt/ottochain/jars:/jars:ro
+    environment:
+      <<: *common-env
+      CL_PUBLIC_HTTP_PORT: "9100"
+      CL_P2P_HTTP_PORT: "9101"
+      CL_CLI_HTTP_PORT: "9102"
+      CL_GLOBAL_L0_PEER_HTTP_HOST: ${NODE_IP}
+      CL_GLOBAL_L0_PEER_HTTP_PORT: "9000"
+      CL_GLOBAL_L0_PEER_ID: ${GL0_PEER_ID}
+
+  gl1-validator:
+    <<: *common
+    image: ${GL1_IMAGE:-eclipse-temurin:21-jdk}
+    container_name: gl1
+    profiles: ["validator"]
+    command: ["java", "-jar", "/jars/dag-l1.jar", "run-validator"]
+    volumes:
+      - /opt/ottochain/keys:/keys:ro
+      - /opt/ottochain/jars:/jars:ro
+    environment:
+      <<: *common-env
+      CL_PUBLIC_HTTP_PORT: "9100"
+      CL_P2P_HTTP_PORT: "9101"
+      CL_CLI_HTTP_PORT: "9102"
+      CL_GLOBAL_L0_PEER_HTTP_HOST: ${GENESIS_IP}
+      CL_GLOBAL_L0_PEER_HTTP_PORT: "9000"
+      CL_GLOBAL_L0_PEER_ID: ${GL0_PEER_ID}
+      CL_L0_PEER_HTTP_HOST: ${GENESIS_IP}
+      CL_L0_PEER_HTTP_PORT: "9100"
+      CL_L0_PEER_ID: ${GL1_PEER_ID}
+
+  # ============================================
+  # ML0 - Metagraph L0 (OttoChain Consensus)
+  # ============================================
+  ml0-genesis:
+    <<: *common
+    image: ${ML0_IMAGE:-eclipse-temurin:21-jdk}
     container_name: ml0
     profiles: ["genesis"]
-    command: ["run-genesis", "/data/genesis.snapshot"]
-    network_mode: host
+    command: ["java", "-jar", "/jars/metagraph-l0.jar", "run-genesis", "/data/genesis.snapshot"]
     volumes:
-      - ./keys:/keys:ro
-      - ml0-data:/data
+      - /opt/ottochain/keys:/keys:ro
+      - /opt/ottochain/jars:/jars:ro
+      - /opt/ottochain/data:/data
     environment:
       <<: *common-env
-      CL_PUBLIC_HTTP_PORT: 9200
-      CL_P2P_HTTP_PORT: 9201
-      CL_CLI_HTTP_PORT: 9202
-      CL_GLOBAL_L0_PEER_HTTP_HOST: ${GENESIS_IP:-127.0.0.1}
-      CL_GLOBAL_L0_PEER_HTTP_PORT: 9000
-      CL_GLOBAL_L0_PEER_ID: ${GENESIS_GL0_ID}
-    depends_on:
-      gl0-genesis:
-        condition: service_healthy
+      CL_PUBLIC_HTTP_PORT: "9200"
+      CL_P2P_HTTP_PORT: "9201"
+      CL_CLI_HTTP_PORT: "9202"
+      CL_GLOBAL_L0_PEER_HTTP_HOST: ${NODE_IP}
+      CL_GLOBAL_L0_PEER_HTTP_PORT: "9000"
+      CL_GLOBAL_L0_PEER_ID: ${GL0_PEER_ID}
+
+  ml0-validator:
+    <<: *common
+    image: ${ML0_IMAGE:-eclipse-temurin:21-jdk}
+    container_name: ml0
+    profiles: ["validator"]
+    command: ["java", "-jar", "/jars/metagraph-l0.jar", "run-validator"]
+    volumes:
+      - /opt/ottochain/keys:/keys:ro
+      - /opt/ottochain/jars:/jars:ro
+    environment:
+      <<: *common-env
+      CL_PUBLIC_HTTP_PORT: "9200"
+      CL_P2P_HTTP_PORT: "9201"
+      CL_CLI_HTTP_PORT: "9202"
+      CL_GLOBAL_L0_PEER_HTTP_HOST: ${GENESIS_IP}
+      CL_GLOBAL_L0_PEER_HTTP_PORT: "9000"
+      CL_GLOBAL_L0_PEER_ID: ${GL0_PEER_ID}
+      CL_L0_PEER_HTTP_HOST: ${GENESIS_IP}
+      CL_L0_PEER_HTTP_PORT: "9200"
+      CL_L0_PEER_ID: ${ML0_PEER_ID}
+      CL_L0_TOKEN_IDENTIFIER: ${TOKEN_ID}
 
   # ============================================
-  # Currency L1 (on all nodes)
+  # CL1 - Currency L1 (OttoChain Tokens)
   # ============================================
-  cl1:
+  cl1-initial:
     <<: *common
-    image: ghcr.io/ottobot-ai/ottochain-cl1:${VERSION:-latest}
+    image: ${CL1_IMAGE:-eclipse-temurin:21-jdk}
     container_name: cl1
-    network_mode: host
+    profiles: ["genesis"]
+    command: ["java", "-jar", "/jars/currency-l1.jar", "run-initial-validator"]
     volumes:
-      - ./keys:/keys:ro
-      - cl1-data:/data
+      - /opt/ottochain/keys:/keys:ro
+      - /opt/ottochain/jars:/jars:ro
     environment:
       <<: *common-env
-      CL_PUBLIC_HTTP_PORT: 9300
-      CL_P2P_HTTP_PORT: 9301
-      CL_CLI_HTTP_PORT: 9302
-      CL_GLOBAL_L0_PEER_HTTP_HOST: ${GENESIS_IP}
-      CL_GLOBAL_L0_PEER_HTTP_PORT: 9000
-      CL_GLOBAL_L0_PEER_ID: ${GENESIS_GL0_ID}
-      CL_L0_PEER_HTTP_HOST: ${GENESIS_IP}
-      CL_L0_PEER_HTTP_PORT: 9200
-      CL_L0_PEER_ID: ${ML0_ID}
-      CL_L0_TOKEN_IDENTIFIER: ${TOKEN_ID:-DAG0JjJkmwDn8s9QTyykPRqnvkagxSkrLfDG1mYz}
+      CL_PUBLIC_HTTP_PORT: "9300"
+      CL_P2P_HTTP_PORT: "9301"
+      CL_CLI_HTTP_PORT: "9302"
+      CL_GLOBAL_L0_PEER_HTTP_HOST: ${NODE_IP}
+      CL_GLOBAL_L0_PEER_HTTP_PORT: "9000"
+      CL_GLOBAL_L0_PEER_ID: ${GL0_PEER_ID}
+      CL_L0_PEER_HTTP_HOST: ${NODE_IP}
+      CL_L0_PEER_HTTP_PORT: "9200"
+      CL_L0_PEER_ID: ${ML0_PEER_ID}
+      CL_L0_TOKEN_IDENTIFIER: ${TOKEN_ID}
 
-  # ============================================
-  # Data L1 (on all nodes)
-  # ============================================
-  dl1:
+  cl1-validator:
     <<: *common
-    image: ghcr.io/ottobot-ai/ottochain-dl1:${VERSION:-latest}
-    container_name: dl1
-    network_mode: host
+    image: ${CL1_IMAGE:-eclipse-temurin:21-jdk}
+    container_name: cl1
+    profiles: ["validator"]
+    command: ["java", "-jar", "/jars/currency-l1.jar", "run-validator"]
     volumes:
-      - ./keys:/keys:ro
-      - dl1-data:/data
+      - /opt/ottochain/keys:/keys:ro
+      - /opt/ottochain/jars:/jars:ro
     environment:
       <<: *common-env
-      CL_PUBLIC_HTTP_PORT: 9400
-      CL_P2P_HTTP_PORT: 9401
-      CL_CLI_HTTP_PORT: 9402
+      CL_PUBLIC_HTTP_PORT: "9300"
+      CL_P2P_HTTP_PORT: "9301"
+      CL_CLI_HTTP_PORT: "9302"
       CL_GLOBAL_L0_PEER_HTTP_HOST: ${GENESIS_IP}
-      CL_GLOBAL_L0_PEER_HTTP_PORT: 9000
-      CL_GLOBAL_L0_PEER_ID: ${GENESIS_GL0_ID}
+      CL_GLOBAL_L0_PEER_HTTP_PORT: "9000"
+      CL_GLOBAL_L0_PEER_ID: ${GL0_PEER_ID}
       CL_L0_PEER_HTTP_HOST: ${GENESIS_IP}
-      CL_L0_PEER_HTTP_PORT: 9200
-      CL_L0_PEER_ID: ${ML0_ID}
-      CL_L0_TOKEN_IDENTIFIER: ${TOKEN_ID:-DAG0JjJkmwDn8s9QTyykPRqnvkagxSkrLfDG1mYz}
+      CL_L0_PEER_HTTP_PORT: "9200"
+      CL_L0_PEER_ID: ${ML0_PEER_ID}
+      CL_L0_TOKEN_IDENTIFIER: ${TOKEN_ID}
 
-volumes:
-  gl0-data:
-  ml0-data:
-  cl1-data:
-  dl1-data:
+  # ============================================
+  # DL1 - Data L1 (OttoChain State Machines)
+  # ============================================
+  dl1-initial:
+    <<: *common
+    image: ${DL1_IMAGE:-eclipse-temurin:21-jdk}
+    container_name: dl1
+    profiles: ["genesis"]
+    command: ["java", "-jar", "/jars/data-l1.jar", "run-initial-validator"]
+    volumes:
+      - /opt/ottochain/keys:/keys:ro
+      - /opt/ottochain/jars:/jars:ro
+    environment:
+      <<: *common-env
+      CL_PUBLIC_HTTP_PORT: "9400"
+      CL_P2P_HTTP_PORT: "9401"
+      CL_CLI_HTTP_PORT: "9402"
+      CL_GLOBAL_L0_PEER_HTTP_HOST: ${NODE_IP}
+      CL_GLOBAL_L0_PEER_HTTP_PORT: "9000"
+      CL_GLOBAL_L0_PEER_ID: ${GL0_PEER_ID}
+      CL_L0_PEER_HTTP_HOST: ${NODE_IP}
+      CL_L0_PEER_HTTP_PORT: "9200"
+      CL_L0_PEER_ID: ${ML0_PEER_ID}
+      CL_L0_TOKEN_IDENTIFIER: ${TOKEN_ID}
+
+  dl1-validator:
+    <<: *common
+    image: ${DL1_IMAGE:-eclipse-temurin:21-jdk}
+    container_name: dl1
+    profiles: ["validator"]
+    command: ["java", "-jar", "/jars/data-l1.jar", "run-validator"]
+    volumes:
+      - /opt/ottochain/keys:/keys:ro
+      - /opt/ottochain/jars:/jars:ro
+    environment:
+      <<: *common-env
+      CL_PUBLIC_HTTP_PORT: "9400"
+      CL_P2P_HTTP_PORT: "9401"
+      CL_CLI_HTTP_PORT: "9402"
+      CL_GLOBAL_L0_PEER_HTTP_HOST: ${GENESIS_IP}
+      CL_GLOBAL_L0_PEER_HTTP_PORT: "9000"
+      CL_GLOBAL_L0_PEER_ID: ${GL0_PEER_ID}
+      CL_L0_PEER_HTTP_HOST: ${GENESIS_IP}
+      CL_L0_PEER_HTTP_PORT: "9200"
+      CL_L0_PEER_ID: ${ML0_PEER_ID}
+      CL_L0_TOKEN_IDENTIFIER: ${TOKEN_ID}
