@@ -1,0 +1,157 @@
+# OttoChain Node Compose
+# Run on each metagraph node (node1, node2, node3)
+# Each node runs: GL0 + ML0 + CL1 + DL1
+
+version: "3.8"
+
+services:
+  gl0:
+    image: ottochain/node:latest
+    container_name: gl0
+    restart: unless-stopped
+    command: ["gl0", "${GL0_MODE:-validator}"]
+    ports:
+      - "9000:9000"  # Public HTTP
+      - "9001:9001"  # P2P
+      - "9002:9002"  # CLI
+    environment:
+      - CL_KEYSTORE=/keys/node.p12
+      - CL_KEYALIAS=${NODE_ALIAS}
+      - CL_PASSWORD=${NODE_PASSWORD}
+      - CL_PUBLIC_HTTP_PORT=9000
+      - CL_P2P_HTTP_PORT=9001
+      - CL_CLI_HTTP_PORT=9002
+      - CL_EXTERNAL_IP=${EXTERNAL_IP}
+      - CL_L0_PEER_HTTP_HOST=${GL0_PEER_HOST:-}
+      - CL_L0_PEER_HTTP_PORT=${GL0_PEER_PORT:-9000}
+      - CL_L0_PEER_ID=${GL0_PEER_ID:-}
+      - CL_APP_ENV=integrationnet
+      - CL_COLLATERAL=0
+      - GENESIS_PATH=${GL0_GENESIS_PATH:-}
+      - JVM_OPTS=-Xms2g -Xmx3g -XX:+UseG1GC
+    volumes:
+      - ./keys:/keys:ro
+      - ./data/gl0:/app/data
+      - ./genesis:/app/genesis:ro
+    networks:
+      - ottochain
+
+  ml0:
+    image: ottochain/node:latest
+    container_name: ml0
+    restart: unless-stopped
+    command: ["ml0", "${ML0_MODE:-validator}"]
+    depends_on:
+      - gl0
+    ports:
+      - "9200:9200"
+      - "9201:9201"
+      - "9202:9202"
+    environment:
+      - CL_KEYSTORE=/keys/node.p12
+      - CL_KEYALIAS=${NODE_ALIAS}
+      - CL_PASSWORD=${NODE_PASSWORD}
+      - CL_PUBLIC_HTTP_PORT=9200
+      - CL_P2P_HTTP_PORT=9201
+      - CL_CLI_HTTP_PORT=9202
+      - CL_EXTERNAL_IP=${EXTERNAL_IP}
+      # GL0 connection
+      - CL_GLOBAL_L0_PEER_HTTP_HOST=${EXTERNAL_IP}
+      - CL_GLOBAL_L0_PEER_HTTP_PORT=9000
+      - CL_GLOBAL_L0_PEER_ID=${GL0_NODE_ID}
+      # ML0 peer for joining
+      - CL_L0_PEER_HTTP_HOST=${ML0_PEER_HOST:-}
+      - CL_L0_PEER_HTTP_PORT=${ML0_PEER_PORT:-9200}
+      - CL_L0_PEER_ID=${ML0_PEER_ID:-}
+      - CL_APP_ENV=integrationnet
+      - CL_COLLATERAL=0
+      - GENESIS_PATH=${ML0_GENESIS_PATH:-}
+      - WAIT_FOR_HOST=${EXTERNAL_IP}
+      - WAIT_FOR_PORT=9000
+      - JVM_OPTS=-Xms2g -Xmx3g -XX:+UseG1GC
+    volumes:
+      - ./keys:/keys:ro
+      - ./data/ml0:/app/data
+      - ./genesis:/app/genesis:ro
+    networks:
+      - ottochain
+
+  cl1:
+    image: ottochain/node:latest
+    container_name: cl1
+    restart: unless-stopped
+    command: ["cl1", "${CL1_MODE:-validator}"]
+    depends_on:
+      - ml0
+    ports:
+      - "9300:9300"
+      - "9301:9301"
+      - "9302:9302"
+    environment:
+      - CL_KEYSTORE=/keys/node.p12
+      - CL_KEYALIAS=${NODE_ALIAS}
+      - CL_PASSWORD=${NODE_PASSWORD}
+      - CL_PUBLIC_HTTP_PORT=9300
+      - CL_P2P_HTTP_PORT=9301
+      - CL_CLI_HTTP_PORT=9302
+      - CL_EXTERNAL_IP=${EXTERNAL_IP}
+      # ML0 connection (local)
+      - CL_L0_PEER_HTTP_HOST=${EXTERNAL_IP}
+      - CL_L0_PEER_HTTP_PORT=9200
+      - CL_L0_PEER_ID=${ML0_NODE_ID}
+      # CL1 peer for joining
+      - CL_L1_PEER_HTTP_HOST=${CL1_PEER_HOST:-}
+      - CL_L1_PEER_HTTP_PORT=${CL1_PEER_PORT:-9300}
+      - CL_L1_PEER_ID=${CL1_PEER_ID:-}
+      - CL_APP_ENV=integrationnet
+      - CL_COLLATERAL=0
+      - WAIT_FOR_HOST=${EXTERNAL_IP}
+      - WAIT_FOR_PORT=9200
+      - JVM_OPTS=-Xms1g -Xmx2g -XX:+UseG1GC
+    volumes:
+      - ./keys:/keys:ro
+      - ./data/cl1:/app/data
+    networks:
+      - ottochain
+
+  dl1:
+    image: ottochain/node:latest
+    container_name: dl1
+    restart: unless-stopped
+    command: ["dl1", "${DL1_MODE:-validator}"]
+    depends_on:
+      - ml0
+    ports:
+      - "9400:9400"
+      - "9401:9401"
+      - "9402:9402"
+    environment:
+      - CL_KEYSTORE=/keys/node.p12
+      - CL_KEYALIAS=${NODE_ALIAS}
+      - CL_PASSWORD=${NODE_PASSWORD}
+      - CL_PUBLIC_HTTP_PORT=9400
+      - CL_P2P_HTTP_PORT=9401
+      - CL_CLI_HTTP_PORT=9402
+      - CL_EXTERNAL_IP=${EXTERNAL_IP}
+      # ML0 connection (local)
+      - CL_L0_PEER_HTTP_HOST=${EXTERNAL_IP}
+      - CL_L0_PEER_HTTP_PORT=9200
+      - CL_L0_PEER_ID=${ML0_NODE_ID}
+      # DL1 peer for joining
+      - CL_L1_PEER_HTTP_HOST=${DL1_PEER_HOST:-}
+      - CL_L1_PEER_HTTP_PORT=${DL1_PEER_PORT:-9400}
+      - CL_L1_PEER_ID=${DL1_PEER_ID:-}
+      - CL_APP_ENV=integrationnet
+      - CL_COLLATERAL=0
+      - WAIT_FOR_HOST=${EXTERNAL_IP}
+      - WAIT_FOR_PORT=9200
+      - JVM_OPTS=-Xms1g -Xmx2g -XX:+UseG1GC
+    volumes:
+      - ./keys:/keys:ro
+      - ./data/dl1:/app/data
+    networks:
+      - ottochain
+
+networks:
+  ottochain:
+    driver: bridge

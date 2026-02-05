@@ -1,0 +1,109 @@
+version: '3.8'
+
+# OttoChain Independent Network Node
+# Each node runs: GL0 + ML0 + DL1
+
+x-common-env: &common-env
+  CL_KEYSTORE: /keys/key.p12
+  CL_KEYALIAS: alias
+  CL_PASSWORD: password
+  JAVA_OPTS: "-XX:+UseG1GC -XX:MaxGCPauseMillis=200"
+
+x-healthcheck: &healthcheck
+  interval: 30s
+  timeout: 10s
+  retries: 5
+  start_period: 60s
+
+services:
+  gl0:
+    image: ottochain/node:latest
+    container_name: gl0
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      CL_APP_ENV: dev
+      CL_COLLATERAL: 0
+      NODE_TYPE: gl0
+      JAVA_OPTS: "-Xmx3g -Xms1g -XX:+UseG1GC"
+    volumes:
+      - ./keys:/keys:ro
+      - ./jars:/jars:ro
+      - gl0_data:/data
+    ports:
+      - "9000:9000"  # Public API
+      - "9001:9001"  # P2P
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "curl", "-f", "http://localhost:9000/node/info"]
+    networks:
+      - ottochain
+
+  ml0:
+    image: ottochain/node:latest
+    container_name: ml0
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      CL_APP_ENV: dev
+      CL_COLLATERAL: 0
+      NODE_TYPE: ml0
+      CL_GLOBAL_L0_PEER_HTTP_HOST: gl0
+      CL_GLOBAL_L0_PEER_HTTP_PORT: 9000
+      CL_L0_PEER_HTTP_HOST: gl0
+      CL_L0_PEER_HTTP_PORT: 9000
+      JAVA_OPTS: "-Xmx3g -Xms1g -XX:+UseG1GC"
+    volumes:
+      - ./keys:/keys:ro
+      - ./jars:/jars:ro
+      - ml0_data:/data
+    ports:
+      - "9200:9000"  # Public API (mapped to 9200)
+      - "9201:9001"  # P2P
+    depends_on:
+      gl0:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "curl", "-f", "http://localhost:9000/node/info"]
+    networks:
+      - ottochain
+
+  dl1:
+    image: ottochain/node:latest
+    container_name: dl1
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      CL_APP_ENV: dev
+      CL_COLLATERAL: 0
+      NODE_TYPE: dl1
+      CL_GLOBAL_L0_PEER_HTTP_HOST: gl0
+      CL_GLOBAL_L0_PEER_HTTP_PORT: 9000
+      CL_L0_PEER_HTTP_HOST: ml0
+      CL_L0_PEER_HTTP_PORT: 9000
+      JAVA_OPTS: "-Xmx2g -Xms512m -XX:+UseG1GC"
+    volumes:
+      - ./keys:/keys:ro
+      - ./jars:/jars:ro
+      - dl1_data:/data
+    ports:
+      - "9400:9000"  # Public API (mapped to 9400)
+      - "9401:9001"  # P2P
+    depends_on:
+      ml0:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "curl", "-f", "http://localhost:9000/node/info"]
+    networks:
+      - ottochain
+
+volumes:
+  gl0_data:
+  ml0_data:
+  dl1_data:
+
+networks:
+  ottochain:
+    driver: bridge
