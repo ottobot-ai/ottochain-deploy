@@ -1,2 +1,18 @@
+# JARs (built separately)
 docker/jars/
 *.jar
+
+# Local secrets (never commit!)
+.env.local
+*.env.local
+secrets/
+
+# SSH keys
+*.pem
+*.p12
+id_*
+
+# Editor
+.idea/
+*.swp
+.DS_Store

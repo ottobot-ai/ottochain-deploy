@@ -18,4 +18,4 @@ docker rm -f gl0-2 gl0-1 gl0 2>/dev/null || true
 
 echo ""
 echo "All containers stopped."
-docker ps --filter "name=gl0" --filter "name=ml0" --filter "name=cl1" --filter "name=dl1" --format "{{.Names}}"
+docker ps --filter "name=gl0" --filter "name=ml0" --filter "name=cl1" --filter "name=dl1" --format "{{.Names}}" | grep -E "^(gl0|ml0|cl1|dl1)" || echo "(none running)"

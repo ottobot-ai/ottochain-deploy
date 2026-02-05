@@ -5,20 +5,17 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/env.sh"
 
-# Reload GL0 peer ID
-GL0_PEER_ID=$(cat /opt/ottochain/gl0-peer-id)
-
 echo "=== Starting ML0 Cluster ==="
 
-# Stop existing
-docker rm -f ml0 ml0-1 ml0-2 2>/dev/null || true
-
-# Check if genesis snapshot exists
+# Check for genesis snapshot
 if [ ! -f "$DATA_DIR/genesis.snapshot" ]; then
   echo "ERROR: Genesis snapshot not found at $DATA_DIR/genesis.snapshot"
   echo "Create it with: java -jar jars/metagraph-l0.jar create-genesis genesis.csv"
   exit 1
 fi
+
+# Stop existing
+docker rm -f ml0 ml0-1 ml0-2 2>/dev/null || true
 
 # ML0 Primary (genesis mode if no peer ID exists)
 if [ -z "$ML0_PEER_ID" ]; then
@@ -34,7 +31,7 @@ docker run -d --name ml0 \
   -p 9200:9200 -p 9201:9201 -p 9202:9202 \
   -v $JARS_DIR:/jars:ro \
   -v $KEYS_DIR:/keys:ro \
-  -v $DATA_DIR:/data:ro \
+  -v $DATA_DIR:/data \
   -e CL_KEYSTORE=/keys/key.p12 \
   -e CL_KEYALIAS=$CL_KEYALIAS \
   -e CL_PASSWORD=$CL_PASSWORD \
@@ -53,10 +50,20 @@ docker run -d --name ml0 \
 echo "Waiting 30s for ML0 primary..."
 sleep 30
 
-# Save peer ID
+# Save peer ID and token ID
 ML0_PEER_ID=$(curl -s http://localhost:9200/node/info | jq -r .id)
 echo "$ML0_PEER_ID" > /opt/ottochain/ml0-peer-id
 echo "ML0 Peer ID: ${ML0_PEER_ID:0:20}..."
+
+# Get token ID from state channel
+TOKEN_ID=$(curl -s http://localhost:9000/global-snapshots/latest | jq -r '.value.stateChannelSnapshots | keys[0]' 2>/dev/null || echo "")
+if [ -n "$TOKEN_ID" ] && [ "$TOKEN_ID" != "null" ]; then
+  echo "$TOKEN_ID" > /opt/ottochain/token-id
+  echo "Token ID: ${TOKEN_ID:0:20}..."
+fi
+
+# Reload TOKEN_ID for validators
+TOKEN_ID=$(cat /opt/ottochain/token-id 2>/dev/null || echo "")
 
 # ML0-1
 echo "Starting ML0-1..."
@@ -79,6 +86,7 @@ docker run -d --name ml0-1 \
   -e CL_L0_PEER_HTTP_HOST=$HOST_IP \
   -e CL_L0_PEER_HTTP_PORT=9200 \
   -e CL_L0_PEER_ID=$ML0_PEER_ID \
+  -e CL_L0_TOKEN_IDENTIFIER=$TOKEN_ID \
   -e CL_COLLATERAL=$CL_COLLATERAL \
   $JAVA_IMAGE \
   java -jar /jars/metagraph-l0.jar run-validator
@@ -104,6 +112,7 @@ docker run -d --name ml0-2 \
   -e CL_L0_PEER_HTTP_HOST=$HOST_IP \
   -e CL_L0_PEER_HTTP_PORT=9200 \
   -e CL_L0_PEER_ID=$ML0_PEER_ID \
+  -e CL_L0_TOKEN_IDENTIFIER=$TOKEN_ID \
   -e CL_COLLATERAL=$CL_COLLATERAL \
   $JAVA_IMAGE \
   java -jar /jars/metagraph-l0.jar run-validator
@@ -111,14 +120,14 @@ docker run -d --name ml0-2 \
 echo "Waiting 40s for validators..."
 sleep 40
 
-# Join validators (CLI port is always 9002 inside container)
+# Join validators
 echo "Joining ML0-1 to cluster..."
-docker exec ml0-1 curl -s -X POST "http://127.0.0.1:9002/cluster/join" \
+docker exec ml0-1 curl -s -X POST "http://127.0.0.1:9212/cluster/join" \
   -H "Content-Type: application/json" \
   -d "{\"id\": \"$ML0_PEER_ID\", \"ip\": \"$HOST_IP\", \"p2pPort\": 9201}"
 
 echo "Joining ML0-2 to cluster..."
-docker exec ml0-2 curl -s -X POST "http://127.0.0.1:9002/cluster/join" \
+docker exec ml0-2 curl -s -X POST "http://127.0.0.1:9222/cluster/join" \
   -H "Content-Type: application/json" \
   -d "{\"id\": \"$ML0_PEER_ID\", \"ip\": \"$HOST_IP\", \"p2pPort\": 9201}"
 

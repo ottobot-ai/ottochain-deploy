@@ -94,14 +94,14 @@ docker run -d --name gl0-2 \
 echo "Waiting 30s for validators..."
 sleep 30
 
-# Join validators (CLI port is always 9002 inside container)
+# Join validators (use the CLI port each container listens on internally)
 echo "Joining GL0-1 to cluster..."
-docker exec gl0-1 curl -s -X POST "http://127.0.0.1:9002/cluster/join" \
+docker exec gl0-1 curl -s -X POST "http://127.0.0.1:9012/cluster/join" \
   -H "Content-Type: application/json" \
   -d "{\"id\": \"$GL0_PEER_ID\", \"ip\": \"$HOST_IP\", \"p2pPort\": 9001}"
 
 echo "Joining GL0-2 to cluster..."
-docker exec gl0-2 curl -s -X POST "http://127.0.0.1:9002/cluster/join" \
+docker exec gl0-2 curl -s -X POST "http://127.0.0.1:9022/cluster/join" \
   -H "Content-Type: application/json" \
   -d "{\"id\": \"$GL0_PEER_ID\", \"ip\": \"$HOST_IP\", \"p2pPort\": 9001}"
 
