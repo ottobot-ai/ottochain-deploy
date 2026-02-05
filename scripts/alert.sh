@@ -18,16 +18,13 @@ fi
 WEBHOOK_URL="${OTTOCHAIN_ALERT_WEBHOOK:-}"
 
 # Nodes to monitor (port:name)
+# All 5 layers on each of the 3 distributed nodes
 NODES=(
-    "9000:GL0-0"
-    "9010:GL0-1"
-    "9020:GL0-2"
-    "9200:ML0-0"
-    "9210:ML0-1"
-    "9220:ML0-2"
-    "9400:DL1-0"
-    "9410:DL1-1"
-    "9420:DL1-2"
+    "9000:GL0"
+    "9100:GL1"
+    "9200:ML0"
+    "9300:CL1"
+    "9400:DL1"
 )
 
 # Initialize state file if missing
