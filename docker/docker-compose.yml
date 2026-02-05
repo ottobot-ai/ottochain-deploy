@@ -1,108 +1,238 @@
-version: '3.8'
-
-# OttoChain Independent Network Node
-# Each node runs: GL0 + ML0 + DL1
-
-x-common-env: &common-env
-  CL_KEYSTORE: /keys/key.p12
-  CL_KEYALIAS: alias
-  CL_PASSWORD: password
-  JAVA_OPTS: "-XX:+UseG1GC -XX:MaxGCPauseMillis=200"
-
-x-healthcheck: &healthcheck
-  interval: 30s
-  timeout: 10s
-  retries: 5
-  start_period: 60s
+# OttoChain Metagraph - Docker Compose
+# Each node runs all 5 layers with the same key
+# Configure via .env file (see .env.example)
 
 services:
   gl0:
-    image: ottochain/node:latest
+    image: ${TESSELLATION_IMAGE:-constellationnetwork/tessellation}:${TESSELLATION_VERSION:-v4.0.0-rc.2}
     container_name: gl0
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      <<: *common-env
-      CL_APP_ENV: dev
-      CL_COLLATERAL: 0
-      NODE_TYPE: gl0
-      JAVA_OPTS: "-Xmx3g -Xms1g -XX:+UseG1GC"
-    volumes:
-      - ./keys:/keys:ro
-      - ./jars:/jars:ro
-      - gl0_data:/data
+      - CL_DOCKER_ID=gl0
+      - CL_KEYSTORE=/tessellation/key.p12
+      - CL_PUBLIC_HTTP_PORT=9000
+      - CL_P2P_HTTP_PORT=9001
+      - CL_CLI_HTTP_PORT=9002
+      - CL_L0_PEER_HTTP_HOST=${GL0_GENESIS_HOST}
+      - CL_L0_PEER_HTTP_PORT=9000
+      - CL_L0_PEER_ID=${GL0_GENESIS_ID}
+      - CL_DOCKER_JOIN=${GL0_JOIN:-false}
+      - CL_DOCKER_JOIN_IP=${GL0_GENESIS_HOST}
+      - CL_DOCKER_JOIN_PORT=9001
+      - CL_DOCKER_JOIN_ID=${GL0_GENESIS_ID}
+      - CL_DOCKER_JOIN_CLI_PORT=9002
+      - CL_DOCKER_JOIN_INITIAL_DELAY=${GL0_JOIN_DELAY:-0}
+      - CL_DOCKER_JOIN_RETRIES=20
+      - CL_DOCKER_JOIN_DELAY=10
+      - CL_DOCKER_GENESIS=${GL0_GENESIS:-false}
+      - CL_EXTERNAL_IP=${NODE_IP}
     ports:
-      - "9000:9000"  # Public API
-      - "9001:9001"  # P2P
+      - "9000:9000"
+      - "9001:9001"
+      - "9002:9002"
+    volumes:
+      - ./key.p12:/tessellation/key.p12:ro
+      - ./genesis.csv:/tessellation/genesis.csv:ro
+      - ./data/gl0:/tessellation/data
+      - ./logs/gl0:/tessellation/logs
     healthcheck:
-      <<: *healthcheck
       test: ["CMD", "curl", "-f", "http://localhost:9000/node/info"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     networks:
       - ottochain
 
-  ml0:
-    image: ottochain/node:latest
-    container_name: ml0
+  gl1:
+    image: ${TESSELLATION_IMAGE:-constellationnetwork/tessellation}:${TESSELLATION_VERSION:-v4.0.0-rc.2}
+    container_name: gl1
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      <<: *common-env
-      CL_APP_ENV: dev
-      CL_COLLATERAL: 0
-      NODE_TYPE: ml0
-      CL_GLOBAL_L0_PEER_HTTP_HOST: gl0
-      CL_GLOBAL_L0_PEER_HTTP_PORT: 9000
-      CL_L0_PEER_HTTP_HOST: gl0
-      CL_L0_PEER_HTTP_PORT: 9000
-      JAVA_OPTS: "-Xmx3g -Xms1g -XX:+UseG1GC"
-    volumes:
-      - ./keys:/keys:ro
-      - ./jars:/jars:ro
-      - ml0_data:/data
+      - CL_DOCKER_ID=gl1
+      - CL_KEYSTORE=/tessellation/key.p12
+      - CL_PUBLIC_HTTP_PORT=9100
+      - CL_P2P_HTTP_PORT=9101
+      - CL_CLI_HTTP_PORT=9102
+      - CL_L0_PEER_HTTP_HOST=${GL0_GENESIS_HOST}
+      - CL_L0_PEER_HTTP_PORT=9000
+      - CL_L0_PEER_ID=${GL0_GENESIS_ID}
+      - CL_DOCKER_JOIN=${GL1_JOIN:-false}
+      - CL_DOCKER_JOIN_IP=${GL1_GENESIS_HOST:-${GL0_GENESIS_HOST}}
+      - CL_DOCKER_JOIN_PORT=9101
+      - CL_DOCKER_JOIN_ID=${GL1_GENESIS_ID:-${GL0_GENESIS_ID}}
+      - CL_DOCKER_JOIN_CLI_PORT=9102
+      - CL_DOCKER_JOIN_INITIAL_DELAY=${GL1_JOIN_DELAY:-45}
+      - CL_DOCKER_JOIN_RETRIES=20
+      - CL_DOCKER_JOIN_DELAY=10
+      - CL_DOCKER_GENESIS=${GL1_GENESIS:-false}
+      - CL_EXTERNAL_IP=${NODE_IP}
     ports:
-      - "9200:9000"  # Public API (mapped to 9200)
-      - "9201:9001"  # P2P
+      - "9100:9100"
+      - "9101:9101"
+      - "9102:9102"
+    volumes:
+      - ./key.p12:/tessellation/key.p12:ro
+      - ./data/gl1:/tessellation/data
+      - ./logs/gl1:/tessellation/logs
     depends_on:
       gl0:
         condition: service_healthy
     healthcheck:
-      <<: *healthcheck
-      test: ["CMD", "curl", "-f", "http://localhost:9000/node/info"]
+      test: ["CMD", "curl", "-f", "http://localhost:9100/node/info"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     networks:
       - ottochain
 
-  dl1:
-    image: ottochain/node:latest
-    container_name: dl1
+  ml0:
+    image: ${METAGRAPH_IMAGE:-ottochain}:${METAGRAPH_VERSION:-latest}
+    container_name: ml0
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      <<: *common-env
-      CL_APP_ENV: dev
-      CL_COLLATERAL: 0
-      NODE_TYPE: dl1
-      CL_GLOBAL_L0_PEER_HTTP_HOST: gl0
-      CL_GLOBAL_L0_PEER_HTTP_PORT: 9000
-      CL_L0_PEER_HTTP_HOST: ml0
-      CL_L0_PEER_HTTP_PORT: 9000
-      JAVA_OPTS: "-Xmx2g -Xms512m -XX:+UseG1GC"
-    volumes:
-      - ./keys:/keys:ro
-      - ./jars:/jars:ro
-      - dl1_data:/data
+      - CL_DOCKER_ID=ml0
+      - CL_KEYSTORE=/tessellation/key.p12
+      - CL_PUBLIC_HTTP_PORT=9200
+      - CL_P2P_HTTP_PORT=9201
+      - CL_CLI_HTTP_PORT=9202
+      - CL_GLOBAL_L0_PEER_HTTP_HOST=${GL0_GENESIS_HOST}
+      - CL_GLOBAL_L0_PEER_HTTP_PORT=9000
+      - CL_GLOBAL_L0_PEER_ID=${GL0_GENESIS_ID}
+      - CL_L0_PEER_HTTP_HOST=${ML0_GENESIS_HOST:-${GL0_GENESIS_HOST}}
+      - CL_L0_PEER_HTTP_PORT=9200
+      - CL_L0_PEER_ID=${ML0_GENESIS_ID:-${GL0_GENESIS_ID}}
+      - CL_DOCKER_JOIN=${ML0_JOIN:-false}
+      - CL_DOCKER_JOIN_IP=${ML0_GENESIS_HOST:-${GL0_GENESIS_HOST}}
+      - CL_DOCKER_JOIN_PORT=9201
+      - CL_DOCKER_JOIN_ID=${ML0_GENESIS_ID:-${GL0_GENESIS_ID}}
+      - CL_DOCKER_JOIN_CLI_PORT=9202
+      - CL_DOCKER_JOIN_INITIAL_DELAY=${ML0_JOIN_DELAY:-60}
+      - CL_DOCKER_JOIN_RETRIES=20
+      - CL_DOCKER_JOIN_DELAY=10
+      - CL_DOCKER_GENESIS=${ML0_GENESIS:-false}
+      - CL_ML0_GENERATE_GENESIS=${ML0_GENERATE_GENESIS:-}
+      - CL_EXTERNAL_IP=${NODE_IP}
+      - CL_METAGRAPH_ID=${METAGRAPH_ID}
     ports:
-      - "9400:9000"  # Public API (mapped to 9400)
-      - "9401:9001"  # P2P
+      - "9200:9200"
+      - "9201:9201"
+      - "9202:9202"
+    volumes:
+      - ./key.p12:/tessellation/key.p12:ro
+      - ./genesis.csv:/tessellation/genesis.csv:ro
+      - ./data/ml0:/tessellation/data
+      - ./logs/ml0:/tessellation/logs
+    depends_on:
+      gl0:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/node/info"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    networks:
+      - ottochain
+
+  cl1:
+    image: ${METAGRAPH_IMAGE:-ottochain}:${METAGRAPH_VERSION:-latest}
+    container_name: cl1
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - CL_DOCKER_ID=cl1
+      - CL_KEYSTORE=/tessellation/key.p12
+      - CL_PUBLIC_HTTP_PORT=9300
+      - CL_P2P_HTTP_PORT=9301
+      - CL_CLI_HTTP_PORT=9302
+      - CL_L0_PEER_HTTP_HOST=${ML0_GENESIS_HOST:-${GL0_GENESIS_HOST}}
+      - CL_L0_PEER_HTTP_PORT=9200
+      - CL_L0_PEER_ID=${ML0_GENESIS_ID:-${GL0_GENESIS_ID}}
+      - CL_DOCKER_JOIN=${CL1_JOIN:-false}
+      - CL_DOCKER_JOIN_IP=${CL1_GENESIS_HOST:-${GL0_GENESIS_HOST}}
+      - CL_DOCKER_JOIN_PORT=9301
+      - CL_DOCKER_JOIN_ID=${CL1_GENESIS_ID:-${GL0_GENESIS_ID}}
+      - CL_DOCKER_JOIN_CLI_PORT=9302
+      - CL_DOCKER_JOIN_INITIAL_DELAY=${CL1_JOIN_DELAY:-90}
+      - CL_DOCKER_JOIN_RETRIES=20
+      - CL_DOCKER_JOIN_DELAY=10
+      - CL_DOCKER_GENESIS=${CL1_GENESIS:-false}
+      - CL_EXTERNAL_IP=${NODE_IP}
+      - CL_METAGRAPH_ID=${METAGRAPH_ID}
+    ports:
+      - "9300:9300"
+      - "9301:9301"
+      - "9302:9302"
+    volumes:
+      - ./key.p12:/tessellation/key.p12:ro
+      - ./data/cl1:/tessellation/data
+      - ./logs/cl1:/tessellation/logs
     depends_on:
       ml0:
         condition: service_healthy
     healthcheck:
-      <<: *healthcheck
-      test: ["CMD", "curl", "-f", "http://localhost:9000/node/info"]
+      test: ["CMD", "curl", "-f", "http://localhost:9300/node/info"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
     networks:
       - ottochain
 
-volumes:
-  gl0_data:
-  ml0_data:
-  dl1_data:
+  dl1:
+    image: ${METAGRAPH_IMAGE:-ottochain}:${METAGRAPH_VERSION:-latest}
+    container_name: dl1
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - CL_DOCKER_ID=dl1
+      - CL_KEYSTORE=/tessellation/key.p12
+      - CL_PUBLIC_HTTP_PORT=9400
+      - CL_P2P_HTTP_PORT=9401
+      - CL_CLI_HTTP_PORT=9402
+      - CL_L0_PEER_HTTP_HOST=${ML0_GENESIS_HOST:-${GL0_GENESIS_HOST}}
+      - CL_L0_PEER_HTTP_PORT=9200
+      - CL_L0_PEER_ID=${ML0_GENESIS_ID:-${GL0_GENESIS_ID}}
+      - CL_DOCKER_JOIN=${DL1_JOIN:-false}
+      - CL_DOCKER_JOIN_IP=${DL1_GENESIS_HOST:-${GL0_GENESIS_HOST}}
+      - CL_DOCKER_JOIN_PORT=9401
+      - CL_DOCKER_JOIN_ID=${DL1_GENESIS_ID:-${GL0_GENESIS_ID}}
+      - CL_DOCKER_JOIN_CLI_PORT=9402
+      - CL_DOCKER_JOIN_INITIAL_DELAY=${DL1_JOIN_DELAY:-90}
+      - CL_DOCKER_JOIN_RETRIES=20
+      - CL_DOCKER_JOIN_DELAY=10
+      - CL_DOCKER_GENESIS=${DL1_GENESIS:-false}
+      - CL_EXTERNAL_IP=${NODE_IP}
+      - CL_METAGRAPH_ID=${METAGRAPH_ID}
+    ports:
+      - "9400:9400"
+      - "9401:9401"
+      - "9402:9402"
+    volumes:
+      - ./key.p12:/tessellation/key.p12:ro
+      - ./data/dl1:/tessellation/data
+      - ./logs/dl1:/tessellation/logs
+    depends_on:
+      ml0:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9400/node/info"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+    networks:
+      - ottochain
 
 networks:
   ottochain:
