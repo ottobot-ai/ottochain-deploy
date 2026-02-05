@@ -90,5 +90,37 @@ services:
       redis:
         condition: service_healthy
 
+  monitor:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["node", "packages/monitor/dist/index.js"]
+    environment:
+      # Metagraph nodes (adjust IPs for your deployment)
+      - GL0_URLS=http://node1:9000
+      - ML0_URLS=http://node1:9200,http://node2:9200,http://node3:9200
+      - DL1_URLS=http://node1:9400,http://node2:9400,http://node3:9400
+      # Services (internal docker network)
+      - BRIDGE_URL=http://bridge:3030
+      - INDEXER_URL=http://indexer:3031
+      - GATEWAY_URL=http://gateway:4000
+      # Settings
+      - POLL_INTERVAL_MS=10000
+      - MONITOR_PORT=3032
+      # Auth (set your own password, or leave blank for auto-generated)
+      - MONITOR_USER=admin
+      - MONITOR_PASS=${MONITOR_PASS:-}
+    ports:
+      - "3032:3032"
+    depends_on:
+      - bridge
+      - indexer
+      - gateway
+    extra_hosts:
+      - "node1:5.78.90.207"
+      - "node2:5.78.113.25"
+      - "node3:5.78.107.77"
+
 volumes:
   postgres_data:
