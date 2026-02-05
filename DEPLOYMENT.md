@@ -328,6 +328,81 @@ for p in 9000 9010 9020 9200 9210 9220 9400 9410 9420; do
 done
 ```
 
+## Stack Monitor
+
+The monitor service provides real-time health monitoring for all metagraph nodes and services.
+
+### Features
+- **Node Monitoring**: GL0, ML0, CL1, DL1 health, state, cluster size
+- **Service Monitoring**: Bridge, Indexer, Gateway, Redis, Postgres
+- **Metagraph Metrics**: Snapshot ordinal, fiber count
+- **Dashboard UI**: Real-time updates via WebSocket
+- **REST API**: `/api/status`, `/api/nodes`, `/api/services`
+
+### Deployment
+
+The monitor is included in `services/docker-compose.yml`. To deploy:
+
+```bash
+cd services
+docker compose up -d monitor
+```
+
+### Configuration
+
+Environment variables:
+```bash
+# Metagraph nodes (comma-separated)
+GL0_URLS=http://node1:9000
+ML0_URLS=http://node1:9200,http://node2:9200,http://node3:9200
+DL1_URLS=http://node1:9400,http://node2:9400,http://node3:9400
+
+# Services
+BRIDGE_URL=http://bridge:3030
+INDEXER_URL=http://indexer:3031
+GATEWAY_URL=http://gateway:4000
+
+# Settings
+POLL_INTERVAL_MS=10000    # How often to check health
+MONITOR_PORT=3032         # Dashboard port
+
+# Authentication (optional - auto-generates password if not set)
+MONITOR_USER=admin
+MONITOR_PASS=your-secure-password
+```
+
+### Accessing the Dashboard
+
+```bash
+# Dashboard UI
+http://your-server:3032
+
+# REST API
+curl -u admin:password http://your-server:3032/api/status
+
+# Health check (no auth required)
+curl http://your-server:3032/health
+```
+
+### Security
+
+- Basic auth enabled by default
+- If `MONITOR_PASS` not set, random password generated and printed to logs
+- `/health` endpoint always accessible (for load balancer health checks)
+- Set `MONITOR_AUTH=false` to disable auth (not recommended for production)
+
+### Checking Status
+
+```bash
+# View monitor logs (shows generated password)
+docker compose logs monitor
+
+# Check overall health
+curl -u admin:pass http://localhost:3032/api/status | jq .overall
+```
+
+---
+
 ## Critical Lessons Learned
 
 ### Port Mapping
