@@ -1,24 +1,12 @@
-# Multi-stage Dockerfile for OttoChain nodes
-FROM eclipse-temurin:21-jre-jammy
+# OttoChain Metagraph Docker Image
+# Based on tessellation, adds metagraph JARs
 
-# Install utilities
-RUN apt-get update && apt-get install -y \
-    curl \
-    jq \
-    && rm -rf /var/lib/apt/lists/*
+ARG TESSELLATION_VERSION=v4.0.0-rc.2
+FROM constellationnetwork/tessellation:${TESSELLATION_VERSION}
 
-WORKDIR /app
+# Copy metagraph JARs (ml0, cl1, dl1)
+COPY jars/ml0.jar /tessellation/jars/ml0.jar
+COPY jars/cl1.jar /tessellation/jars/cl1.jar
+COPY jars/dl1.jar /tessellation/jars/dl1.jar
 
-# Copy JARs (mounted or baked in)
-COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
-
-# Default environment
-ENV NODE_TYPE=gl0
-ENV CL_KEYSTORE=/keys/key.p12
-ENV CL_KEYALIAS=alias
-ENV CL_PASSWORD=password
-
-EXPOSE 9000 9001
-
-ENTRYPOINT ["/app/entrypoint.sh"]
+# The entrypoint from tessellation handles everything
