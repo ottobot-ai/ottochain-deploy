@@ -5,9 +5,9 @@ services:
     image: postgres:15-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ottochain
-      POSTGRES_PASSWORD: ottochain
-      POSTGRES_DB: ottochain
+      POSTGRES_USER: ${POSTGRES_USER:-ottochain}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-ottochain}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -38,7 +38,7 @@ services:
       - PORT=3030
       - ML0_URL=http://node1:9200
       - DL1_URL=http://node1:9400
-      - DATABASE_URL=postgresql://ottochain:ottochain@postgres:5432/ottochain
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-ottochain}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ottochain}
     ports:
       - "3030:3030"
     depends_on:
@@ -58,7 +58,7 @@ services:
     environment:
       - PORT=3031
       - ML0_URL=http://node1:9200
-      - DATABASE_URL=postgresql://ottochain:ottochain@postgres:5432/ottochain
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-ottochain}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ottochain}
       - REDIS_URL=redis://redis:6379
     ports:
       - "3031:3031"
@@ -80,7 +80,7 @@ services:
     command: ["node", "packages/gateway/dist/index.js"]
     environment:
       - PORT=4000
-      - DATABASE_URL=postgresql://ottochain:ottochain@postgres:5432/ottochain
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-ottochain}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ottochain}
       - REDIS_URL=redis://redis:6379
     ports:
       - "4000:4000"

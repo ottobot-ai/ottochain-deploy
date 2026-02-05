@@ -9,8 +9,8 @@ export DATA_DIR="/opt/ottochain/data"
 export NETWORK="ottochain_ottochain"
 
 # Key settings
-export CL_KEYALIAS=alias
-export CL_PASSWORD=password
+export CL_KEYALIAS=${CL_KEYALIAS:-alias}
+export CL_PASSWORD=${CL_PASSWORD:?Set CL_PASSWORD environment variable}
 export CL_COLLATERAL=0
 export CL_APP_ENV=dev
 
