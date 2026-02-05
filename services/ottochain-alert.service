@@ -1,0 +1,15 @@
+[Unit]
+Description=OttoChain Alert Watcher
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+ExecStart=/opt/ottochain/scripts/alert.sh watch 30
+Restart=always
+RestartSec=10
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=-/opt/ottochain/.env.alert
+
+[Install]
+WantedBy=multi-user.target
