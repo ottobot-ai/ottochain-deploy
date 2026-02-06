@@ -506,9 +506,14 @@ jobs:
           npx prisma db push --accept-data-loss || true
           cd ../..
           
-          # Restart services
+          # Source environment and restart services
+          set -a
+          source .env
+          set +a
+          
           pm2 restart ecosystem.config.cjs || pm2 start ecosystem.config.cjs
           pm2 save
+          pm2 startup systemd -u root --hp /root 2>/dev/null || true
           
           echo "Services status:"
           pm2 list
