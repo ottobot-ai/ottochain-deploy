@@ -431,6 +431,21 @@ jobs:
             sleep 5
           done
 
+      - name: Install ML0 watchdog
+        run: |
+          echo "Installing ML0 watchdog cron..."
+          scp scripts/ml0-watchdog.sh node1:/opt/ottochain/scripts/
+          ssh node1 << 'SCRIPT'
+          chmod +x /opt/ottochain/scripts/ml0-watchdog.sh
+          # Add cron if not already present
+          if ! crontab -l 2>/dev/null | grep -q ml0-watchdog; then
+            (crontab -l 2>/dev/null; echo "* * * * * /opt/ottochain/scripts/ml0-watchdog.sh >> /var/log/ml0-watchdog.log 2>&1") | crontab -
+            echo "ML0 watchdog cron installed"
+          else
+            echo "ML0 watchdog cron already exists"
+          fi
+          SCRIPT
+
   # ============================================
   # SERVICES: Deploy indexer, explorer, monitor
   # ============================================
