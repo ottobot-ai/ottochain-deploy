@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-BRIDGE_IP="5.78.121.248"
+BRIDGE_IP="${SERVICES_IP}"
 SSH_KEY="$HOME/.ssh/hetzner_ottobot"
 REMOTE_DIR="/opt/ottochain-services"
 SERVICES_SRC="$HOME/.openclaw/workspace/ottochain-services"

@@ -89,18 +89,18 @@ fi
 
 case "$TARGET" in
     1)
-        setup_node 1 "${NODE1_IP:-5.78.90.207}"
+        setup_node 1 "${NODE1_IP:-${NODE1_IP}}"
         ;;
     2)
-        setup_node 2 "${NODE2_IP:-5.78.113.25}"
+        setup_node 2 "${NODE2_IP:-${NODE2_IP}}"
         ;;
     3)
-        setup_node 3 "${NODE3_IP:-5.78.107.77}"
+        setup_node 3 "${NODE3_IP:-${NODE3_IP}}"
         ;;
     all)
-        setup_node 1 "${NODE1_IP:-5.78.90.207}"
-        setup_node 2 "${NODE2_IP:-5.78.113.25}"
-        setup_node 3 "${NODE3_IP:-5.78.107.77}"
+        setup_node 1 "${NODE1_IP:-${NODE1_IP}}"
+        setup_node 2 "${NODE2_IP:-${NODE2_IP}}"
+        setup_node 3 "${NODE3_IP:-${NODE3_IP}}"
         ;;
     *)
         usage

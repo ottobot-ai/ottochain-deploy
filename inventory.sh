@@ -3,10 +3,10 @@
 # Source this file to get node IPs and other config
 
 # Hetzner nodes
-export NODE1_IP="${NODE1_IP:-5.78.90.207}"     # Genesis node
-export NODE2_IP="${NODE2_IP:-5.78.113.25}"     # Validator 2
-export NODE3_IP="${NODE3_IP:-5.78.107.77}"     # Validator 3
-export SERVICES_IP="${SERVICES_IP:-5.78.121.248}"  # Services (indexer, explorer, monitor)
+export NODE1_IP="${NODE1_IP:-${NODE1_IP}}"     # Genesis node
+export NODE2_IP="${NODE2_IP:-${NODE2_IP}}"     # Validator 2
+export NODE3_IP="${NODE3_IP:-${NODE3_IP}}"     # Validator 3
+export SERVICES_IP="${SERVICES_IP:-${SERVICES_IP}}"  # Services (indexer, explorer, monitor)
 
 # SSH config
 export SSH_KEY="${SSH_KEY:-$HOME/.ssh/hetzner_ottobot}"

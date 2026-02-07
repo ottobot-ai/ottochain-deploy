@@ -26,7 +26,7 @@ Each layer uses 3 ports:
 
 ```
 Machine 1 (genesis)     Machine 2 (validator)   Machine 3 (validator)
-5.78.90.207             5.78.113.25             5.78.107.77
+<node1-ip>              <node2-ip>              <node3-ip>
 ───────────────────     ───────────────────     ───────────────────
 GL0-0 :9000-9002        GL0-1 :9000-9002        GL0-2 :9000-9002
 GL1-0 :9100-9102        GL1-1 :9100-9102        GL1-2 :9100-9102
@@ -73,7 +73,7 @@ All machines must allow inbound TCP on:
 - 9300-9302 (CL1)
 - 9400-9402 (DL1)
 
-From: All other metagraph machines + services server (5.78.121.248)
+From: All other metagraph machines + services server
 
 ## Environment Variables
 
