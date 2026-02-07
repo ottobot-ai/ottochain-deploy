@@ -1,19 +1,41 @@
-# JARs (built separately)
-docker/jars/
-*.jar
-
-# Local secrets (never commit!)
+# Environment files (keep examples)
+.env
 .env.local
-*.env.local
-secrets/
-.cluster-state
+.env.*.local
+!.env.example
+!.env.*.example
 
-# SSH keys
-*.pem
-*.p12
-id_*
+# Build artifacts
+*.jar
+target/
+dist/
+build/
 
-# Editor
+# Dependencies
+node_modules/
+
+# IDE
 .idea/
-*.swp
+.vscode/
+*.iml
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temp
+*.tmp
+*.swp
+*~
+
+# Keystores
+*.p12
+*.jks
+keys/
+
+# Secrets
+secrets/
