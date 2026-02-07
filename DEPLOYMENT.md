@@ -403,6 +403,65 @@ curl -u admin:pass http://localhost:3032/api/status | jq .overall
 
 ---
 
+## Operations: Restarts and Data Preservation
+
+### Restart Types
+
+| Type | Data Preserved | When to Use |
+|------|----------------|-------------|
+| `docker restart <container>` | ✅ Yes | Routine restarts, config changes |
+| `docker compose restart` | ✅ Yes | Service restarts |
+| Manual `run-validator` | ✅ Yes | Node recovery, rejoining cluster |
+| CI/CD with `--genesis` | ❌ **WIPED** | Full redeployment, breaking changes |
+
+### Data Preservation Rules
+
+**Data IS preserved when:**
+- Restarting containers (`docker restart gl0 ml0 dl1`)
+- Stopping and starting services (`docker compose stop && docker compose start`)
+- Rejoining a node to cluster using `run-validator` mode
+- Node crash recovery (auto-downloads state from peers)
+
+**Data is WIPED when:**
+- Running genesis mode (`run-genesis`) — creates fresh chain
+- CI/CD full deploy with `--genesis` flag — intentional clean slate
+- Deleting Docker volumes (`docker volume rm ...`)
+- Database recreation in docker-compose (`down -v`)
+
+### Safe Restart Procedure
+
+```bash
+# Restart a single node (preserves state)
+docker restart ml0
+
+# Restart all metagraph containers (preserves state)
+docker restart gl0 ml0 dl1
+
+# Full stack restart (preserves state)
+docker compose stop
+docker compose start
+```
+
+### When Genesis Mode is Required
+
+Only use genesis (`run-genesis`) when:
+1. **Initial deployment** — first time setting up the metagraph
+2. **Genesis changes** — new initial balances, new token allocations
+3. **Breaking protocol changes** — incompatible state format
+4. **Intentional chain reset** — wiping all history
+
+⚠️ **Warning**: Genesis mode erases all existing snapshots, balances, agents, contracts, and fibers. The indexer database should also be wiped to maintain consistency.
+
+### Post-Genesis Checklist
+
+After any genesis wipe:
+- [ ] Verify all nodes reach `Ready` state
+- [ ] Check cluster sizes: `curl http://localhost:9200/cluster/info | jq length`
+- [ ] Wait for DL1 to sync before starting traffic
+- [ ] Optionally wipe indexer DB: `docker compose exec postgres psql -U otto -c 'TRUNCATE ...;'`
+
+---
+
 ## Critical Lessons Learned
 
 ### Port Mapping
