@@ -5,9 +5,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../inventory.sh" 2>/dev/null || true
 
-NODE1_IP="${NODE1_IP:-5.78.90.207}"
-NODE2_IP="${NODE2_IP:-5.78.113.25}"
-NODE3_IP="${NODE3_IP:-5.78.107.77}"
+NODE1_IP="${NODE1_IP:-${NODE1_IP}}"
+NODE2_IP="${NODE2_IP:-${NODE2_IP}}"
+NODE3_IP="${NODE3_IP:-${NODE3_IP}}"
 
 NODES=("$NODE1_IP" "$NODE2_IP" "$NODE3_IP")
 

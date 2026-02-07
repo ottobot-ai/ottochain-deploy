@@ -9,9 +9,9 @@ SSH_KEY="${SSH_KEY:-$HOME/.ssh/hetzner_ottobot}"
 SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $SSH_KEY"
 REMOTE_DIR="/opt/ottochain"
 
-NODE1_IP="${NODE1_IP:-5.78.90.207}"
-NODE2_IP="${NODE2_IP:-5.78.113.25}"
-NODE3_IP="${NODE3_IP:-5.78.107.77}"
+NODE1_IP="${NODE1_IP:-${NODE1_IP}}"
+NODE2_IP="${NODE2_IP:-${NODE2_IP}}"
+NODE3_IP="${NODE3_IP:-${NODE3_IP}}"
 
 stop_node() {
     local node_num=$1

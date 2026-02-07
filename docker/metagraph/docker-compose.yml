@@ -2,10 +2,10 @@
 # Each node runs all 5 layers. Use profiles for genesis vs validator.
 #
 # Usage on node1 (genesis):
-#   NODE_IP=5.78.90.207 docker compose --profile genesis up -d
+#   NODE_IP=<node1-ip> docker compose --profile genesis up -d
 #
 # Usage on node2/node3 (validators):
-#   NODE_IP=<this-node-ip> GENESIS_IP=5.78.90.207 docker compose --profile validator up -d
+#   NODE_IP=<this-node-ip> GENESIS_IP=<genesis-ip> docker compose --profile validator up -d
 
 x-common: &common
   restart: unless-stopped

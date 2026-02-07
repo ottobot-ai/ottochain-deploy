@@ -45,9 +45,9 @@ services:
       postgres:
         condition: service_healthy
     extra_hosts:
-      - "node1:5.78.90.207"
-      - "node2:5.78.113.25"
-      - "node3:5.78.107.77"
+      - "node1:${NODE1_IP:-node1}"
+      - "node2:${NODE2_IP:-node2}"
+      - "node3:${NODE3_IP:-node3}"
 
   indexer:
     build:
@@ -68,9 +68,9 @@ services:
       redis:
         condition: service_healthy
     extra_hosts:
-      - "node1:5.78.90.207"
-      - "node2:5.78.113.25"
-      - "node3:5.78.107.77"
+      - "node1:${NODE1_IP:-node1}"
+      - "node2:${NODE2_IP:-node2}"
+      - "node3:${NODE3_IP:-node3}"
 
   gateway:
     build:
@@ -118,9 +118,9 @@ services:
       - indexer
       - gateway
     extra_hosts:
-      - "node1:5.78.90.207"
-      - "node2:5.78.113.25"
-      - "node3:5.78.107.77"
+      - "node1:${NODE1_IP:-node1}"
+      - "node2:${NODE2_IP:-node2}"
+      - "node3:${NODE3_IP:-node3}"
 
 volumes:
   postgres_data:

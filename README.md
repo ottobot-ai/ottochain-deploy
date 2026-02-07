@@ -1,32 +1,52 @@
-# OttoChain Deployment (Private)
+# OttoChain Deploy
 
-Deployment scripts and documentation for OttoChain metagraph infrastructure.
+Deployment scripts, CI/CD workflows, and infrastructure configuration for OttoChain metagraph.
 
-**DO NOT MAKE PUBLIC** - Contains server IPs and infrastructure details.
+## Architecture
 
-## Infrastructure
+OttoChain runs as a 5-layer metagraph on Constellation Network's Tessellation framework:
 
-| IP | Hostname | Role |
-|----|----------|------|
-| 5.78.90.207 | ottochain-beta-1 | Metagraph node 1 (genesis) |
-| 5.78.113.25 | ottochain-beta-2 | Metagraph node 2 |
-| 5.78.107.77 | ottochain-beta-3 | Metagraph node 3 |
-| 5.78.121.248 | agent-bridge | Services (indexer, explorer, bridge) |
+- **GL0** - Global L0 (DAG consensus)
+- **GL1** - Global L1 (DAG transactions)
+- **ML0** - Metagraph L0 (OttoChain state machine consensus)
+- **CL1** - Currency L1 (OTTO token transactions)
+- **DL1** - Data L1 (fiber/contract data updates)
 
-## Quick Start
+Each layer runs on 3 nodes for Byzantine fault tolerance.
 
-```bash
-# SSH to any node
-ssh -i ~/.ssh/hetzner_ottobot root@5.78.90.207
+## Repository Structure
 
-# Run status check
-/opt/ottochain/scripts/status.sh
-
-# Restart full cluster
-/opt/ottochain/scripts/start-all.sh
+```
+├── .github/workflows/     # CI/CD pipelines
+│   └── release-scratch.yml  # Full cluster deploy from genesis
+├── docker/
+│   └── metagraph/         # Docker Compose for metagraph nodes
+├── services/              # Explorer, bridge, indexer, monitor
+└── docs/                  # Deployment and operations guides
 ```
 
-## Contents
+## Deployment
 
-- `DEPLOYMENT.md` - Full build and deployment guide
-- `scripts/` - Restart and management scripts
+Deployments are triggered via GitHub Actions:
+
+1. **Push to `release/scratch`** - Full wipe and redeploy from genesis
+2. **Manual workflow dispatch** - Options for skip-build, partial deploys
+
+See `DEPLOYMENT.md` for manual deployment instructions.
+
+## Services
+
+- **Gateway** - HTTP API for transaction submission
+- **Bridge** - Connects to metagraph nodes
+- **Indexer** - Indexes snapshots into PostgreSQL
+- **Monitor** - Health checks and status dashboard
+- **Explorer** - Web UI (planned)
+
+## Related Repositories
+
+- [ottochain](https://github.com/ottobot-ai/ottochain) - Core metagraph implementation
+- [tessellation](https://github.com/Constellation-Labs/tessellation) - Constellation Network framework
+
+## License
+
+Private - All rights reserved.

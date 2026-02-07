@@ -62,7 +62,7 @@ cd /opt/ottochain
 # Create .env
 cat > .env << EOF
 CL_PASSWORD=your-keystore-password
-NODE_IP=5.78.90.207
+NODE_IP=<node1-ip>
 GL0_PEER_ID=$(java -jar jars/dag-l0.jar show-id)
 EOF
 
@@ -79,8 +79,8 @@ cd /opt/ottochain
 # Create .env with genesis node info
 cat > .env << EOF
 CL_PASSWORD=your-keystore-password
-NODE_IP=5.78.113.25
-GENESIS_IP=5.78.90.207
+NODE_IP=<node2-ip>
+GENESIS_IP=<node1-ip>
 GL0_PEER_ID=<genesis-peer-id>
 GL1_PEER_ID=<genesis-peer-id>
 ML0_PEER_ID=<genesis-peer-id>

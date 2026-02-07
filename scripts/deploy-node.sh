@@ -30,9 +30,9 @@ done
 
 # Get node IP from inventory
 case "$NODE_NUM" in
-    1) NODE_IP="${NODE1_IP:-5.78.90.207}" ;;
-    2) NODE_IP="${NODE2_IP:-5.78.113.25}" ;;
-    3) NODE_IP="${NODE3_IP:-5.78.107.77}" ;;
+    1) NODE_IP="${NODE1_IP:-${NODE1_IP}}" ;;
+    2) NODE_IP="${NODE2_IP:-${NODE2_IP}}" ;;
+    3) NODE_IP="${NODE3_IP:-${NODE3_IP}}" ;;
     *) echo "Invalid node number: $NODE_NUM"; exit 1 ;;
 esac
 
