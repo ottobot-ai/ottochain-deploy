@@ -1,0 +1,153 @@
+name: Deploy Layers
+
+on:
+  workflow_dispatch:
+    inputs:
+      layers:
+        description: 'Layers to deploy (comma-separated: services,explorer,monitoring,traffic)'
+        required: true
+        default: 'services'
+        type: string
+      pull_images:
+        description: 'Pull latest images before deploy'
+        required: false
+        default: 'true'
+        type: boolean
+      reset_db:
+        description: 'Reset database (services only)'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  deploy:
+    name: Deploy Selected Layers
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/hetzner
+          chmod 600 ~/.ssh/hetzner
+          cat >> ~/.ssh/config << EOF
+          Host services
+            HostName ${{ secrets.HETZNER_SERVICES_IP }}
+            User root
+            IdentityFile ~/.ssh/hetzner
+            StrictHostKeyChecking no
+          EOF
+
+      - name: Parse layers
+        id: parse
+        run: |
+          LAYERS="${{ github.event.inputs.layers }}"
+          echo "deploy_services=$([[ $LAYERS == *services* ]] && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "deploy_explorer=$([[ $LAYERS == *explorer* ]] && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "deploy_monitoring=$([[ $LAYERS == *monitoring* ]] && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "deploy_traffic=$([[ $LAYERS == *traffic* ]] && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "Deploying layers: $LAYERS"
+
+      - name: Pull latest images
+        if: ${{ github.event.inputs.pull_images == 'true' }}
+        run: |
+          ssh services << 'SCRIPT'
+          cd /opt/ottochain-services
+          docker compose pull 2>/dev/null || true
+          SCRIPT
+
+      - name: Deploy services (gateway, bridge, indexer, monitor)
+        if: ${{ steps.parse.outputs.deploy_services == 'true' }}
+        run: |
+          ssh services << 'SCRIPT'
+          cd /opt/ottochain-services
+          
+          # Pull latest code
+          git fetch origin main
+          git reset --hard origin/main
+          echo "Pulled: $(git log --oneline -1)"
+          
+          # Install & build
+          pnpm install --frozen-lockfile || pnpm install
+          pnpm run build
+          
+          # Restart services
+          pm2 restart gateway bridge indexer monitor 2>/dev/null || {
+            pm2 start ecosystem.config.js
+          }
+          
+          echo "Services deployed"
+          SCRIPT
+
+      - name: Reset database
+        if: ${{ github.event.inputs.reset_db == 'true' && steps.parse.outputs.deploy_services == 'true' }}
+        run: |
+          ssh services << 'SCRIPT'
+          cd /opt/ottochain-services
+          pnpm run db:push
+          echo "Database reset"
+          SCRIPT
+
+      - name: Deploy explorer
+        if: ${{ steps.parse.outputs.deploy_explorer == 'true' }}
+        run: |
+          ssh services << 'SCRIPT'
+          cd /opt/ottochain-explorer 2>/dev/null || {
+            git clone https://github.com/ottobot-ai/ottochain-explorer.git /opt/ottochain-explorer
+            cd /opt/ottochain-explorer
+          }
+          
+          git fetch origin main
+          git reset --hard origin/main
+          echo "Pulled: $(git log --oneline -1)"
+          
+          # Build and restart
+          pnpm install --frozen-lockfile || pnpm install
+          pnpm run build
+          
+          pm2 restart explorer 2>/dev/null || {
+            pm2 start "pnpm start" --name explorer
+          }
+          
+          echo "Explorer deployed"
+          SCRIPT
+
+      - name: Deploy monitoring
+        if: ${{ steps.parse.outputs.deploy_monitoring == 'true' }}
+        run: |
+          ssh services << 'SCRIPT'
+          cd /opt/ottochain-monitoring 2>/dev/null || {
+            git clone https://github.com/ottobot-ai/ottochain-monitoring.git /opt/ottochain-monitoring
+            cd /opt/ottochain-monitoring
+          }
+          
+          git fetch origin main
+          git reset --hard origin/main
+          
+          docker compose up -d
+          echo "Monitoring deployed"
+          SCRIPT
+
+      - name: Deploy traffic generator
+        if: ${{ steps.parse.outputs.deploy_traffic == 'true' }}
+        run: |
+          ssh services << 'SCRIPT'
+          cd /opt/ottochain-services
+          
+          pm2 restart traffic-gen 2>/dev/null || {
+            pm2 start "pnpm --filter traffic-generator start" --name traffic-gen
+          }
+          
+          echo "Traffic generator deployed"
+          SCRIPT
+
+      - name: Summary
+        run: |
+          echo "## Deploy Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Layer | Deployed |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Services | ${{ steps.parse.outputs.deploy_services }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Explorer | ${{ steps.parse.outputs.deploy_explorer }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Monitoring | ${{ steps.parse.outputs.deploy_monitoring }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Traffic | ${{ steps.parse.outputs.deploy_traffic }} |" >> $GITHUB_STEP_SUMMARY
