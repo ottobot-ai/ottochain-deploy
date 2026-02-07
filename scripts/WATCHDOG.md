@@ -1,81 +1,50 @@
-# Metagraph Watchdog Scripts
+# Layer Watchdog
 
-Auto-restart scripts for metagraph nodes that become unresponsive due to CPU starvation.
+Monitors all metagraph layers (GL0, ML0, CL1, DL1) and auto-restarts stalled nodes.
 
-## Problem
+## How It Works
 
-Under heavy load (e.g., high traffic generator volume), ML0 can experience CPU starvation where:
-- Container shows "Up" in Docker
-- But HTTP health endpoint (`/node/info`) times out
-- Cats Effect runtime is too busy to schedule HTTP handlers
-- Consensus shows "process is stale" warnings
+1. Tracks ordinal progression for each layer
+2. If ordinal unchanged for 4 minutes → restart container
+3. 10-minute cooldown between restarts (prevents restart loops)
 
-The node is technically running but functionally dead.
-
-## Solution
-
-`ml0-watchdog.sh` monitors the health endpoint and restarts the container after consecutive failures.
-
-## Installation
-
-### Option 1: Cron (Recommended)
+## Install (on each metagraph node)
 
 ```bash
-# Copy to tessellation server
-scp scripts/watchdog/ml0-watchdog.sh root@<METAGRAPH_IP>:/opt/ottochain/scripts/
+# Copy script
+scp scripts/layer-watchdog.sh root@<NODE_IP>:/opt/ottochain/scripts/
+ssh root@<NODE_IP> "chmod +x /opt/ottochain/scripts/layer-watchdog.sh"
 
-# Make executable
-ssh root@<METAGRAPH_IP> "chmod +x /opt/ottochain/scripts/ml0-watchdog.sh"
-
-# Add to crontab (checks every minute)
-ssh root@<METAGRAPH_IP> 'echo "* * * * * /opt/ottochain/scripts/ml0-watchdog.sh >> /var/log/ml0-watchdog.log 2>&1" | crontab -'
+# Add cron (every 2 minutes)
+ssh root@<NODE_IP> 'echo "*/2 * * * * /opt/ottochain/scripts/layer-watchdog.sh >> /var/log/layer-watchdog.log 2>&1" | crontab -'
 ```
 
-### Option 2: Daemon Mode
+## Usage
 
 ```bash
-# Run in background
-nohup ./ml0-watchdog.sh --daemon >> /var/log/ml0-watchdog.log 2>&1 &
+./layer-watchdog.sh              # Check all layers once
+./layer-watchdog.sh ml0          # Check specific layer
+./layer-watchdog.sh --daemon     # Continuous (every 2min)
 ```
 
-### Option 3: Systemd
-
-```ini
-# /etc/systemd/system/ml0-watchdog.service
-[Unit]
-Description=ML0 Watchdog
-After=docker.service
-
-[Service]
-Type=simple
-ExecStart=/opt/ottochain/scripts/ml0-watchdog.sh --daemon
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-## Configuration
-
-Environment variables:
+## Configuration (env vars)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ML0_PORT` | `9200` | ML0 HTTP port |
-| `ML0_CONTAINER` | `ml0` | Docker container name |
-| `TIMEOUT_SECONDS` | `10` | Health check timeout |
-| `MAX_FAILURES` | `3` | Consecutive failures before restart |
-| `DAEMON_INTERVAL` | `60` | Seconds between checks (daemon mode) |
+| `STALL_THRESHOLD_MINUTES` | 4 | Minutes without ordinal change = stall |
+| `COOLDOWN_MINUTES` | 10 | Minutes between restarts |
+| `DAEMON_INTERVAL` | 120 | Seconds between daemon checks |
 
 ## Logs
 
-Check `/var/log/ml0-watchdog.log` or `journalctl -t ml0-watchdog` for activity.
+```bash
+tail -f /var/log/layer-watchdog.log
+```
 
 Example output:
 ```
-[2026-02-06 19:05:23] WARN: ML0 health check failed (attempt 1/3)
-[2026-02-06 19:06:23] WARN: ML0 health check failed (attempt 2/3)
-[2026-02-06 19:07:23] WARN: ML0 health check failed (attempt 3/3)
-[2026-02-06 19:07:23] ERROR: ML0 unresponsive after 3 attempts, restarting...
-[2026-02-06 19:07:25] INFO: ML0 restart initiated successfully
+[2026-02-06 21:50:00] OK: gl0 ordinal=12345 -> 12346
+[2026-02-06 21:50:00] OK: ml0 ordinal=5678 (unchanged 120s)
+[2026-02-06 21:50:00] STALL: cl1 stuck at ordinal 999 for 250s
+[2026-02-06 21:50:00] RESTART: cl1 restarted successfully
 ```
