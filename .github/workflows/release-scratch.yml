@@ -140,9 +140,9 @@ jobs:
           echo "=== Stopping all containers ==="
           for host in node1 node2 node3; do
             echo "Stopping $host..."
-            ssh $host 'cd /opt/ottochain && docker compose down 2>/dev/null || docker stop $(docker ps -q) 2>/dev/null || true' &
+            ssh $host 'cd /opt/ottochain && docker compose down 2>/dev/null || docker stop $(docker ps -q) 2>/dev/null || true; docker rm -f gl0 gl1 ml0 cl1 dl1 2>/dev/null || true' &
           done
-          ssh services 'pm2 stop all 2>/dev/null || true; docker stop postgres redis 2>/dev/null || true' &
+          ssh services 'pm2 stop all 2>/dev/null || true' &
           wait
           echo "All stopped"
           
@@ -151,7 +151,7 @@ jobs:
         run: |
           echo "=== Wiping state ==="
           for host in node1 node2 node3; do
-            ssh $host 'rm -rf /opt/ottochain/data/* /opt/ottochain/logs/*' &
+            ssh $host 'rm -rf /opt/ottochain/data/* /opt/ottochain/logs/* /opt/ottochain/genesis/genesis.snapshot /opt/ottochain/genesis/genesis.address' &
           done
           wait
           echo "State wiped"
@@ -174,12 +174,6 @@ jobs:
             fi
           done
           
-      - name: Create genesis.csv on node1
-        run: |
-          NODE1_ADDR=$(ssh node1 'java -jar /opt/ottochain/jars/dag-l0.jar show-address 2>/dev/null || echo "DAG0JjJkmwDn8s9QTyykPRqnvkagxSkrLfDG1mYz"')
-          echo "Genesis address: $NODE1_ADDR"
-          ssh node1 "echo '$NODE1_ADDR,1000000000000000' > /opt/ottochain/genesis/genesis.csv"
-          
       - name: Get node peer IDs
         id: peers
         run: |
@@ -194,12 +188,19 @@ jobs:
           echo "Node 1 ID: $NODE1_ID"
           echo "Node 2 ID: $NODE2_ID"
           echo "Node 3 ID: $NODE3_ID"
+
+      - name: Create genesis.csv on node1
+        run: |
+          NODE1_ADDR=$(ssh node1 'java -jar /opt/ottochain/jars/dag-l0.jar show-address 2>/dev/null || echo "DAG0JjJkmwDn8s9QTyykPRqnvkagxSkrLfDG1mYz"')
+          echo "Genesis address: $NODE1_ADDR"
+          ssh node1 "echo '$NODE1_ADDR,1000000000000000' > /opt/ottochain/genesis/genesis.csv"
           
       - name: Start GL0 genesis (node1)
         run: |
           GENESIS_IP="${{ secrets.HETZNER_NODE1_IP }}"
           GL0_PEER_ID="${{ steps.peers.outputs.node1_id }}"
           
+          # Write complete .env for genesis node (overwrites, not appends)
           ssh node1 << SCRIPT
           cd /opt/ottochain
           cat > .env << EOF
@@ -232,6 +233,7 @@ jobs:
               node3) NODE_IP="${{ secrets.HETZNER_NODE3_IP }}" ;;
             esac
             
+            # Write complete .env for validator node
             ssh $host << SCRIPT
             cd /opt/ottochain
             cat > .env << EOF
@@ -259,14 +261,10 @@ jobs:
         run: |
           GENESIS_IP="${{ secrets.HETZNER_NODE1_IP }}"
           GL0_PEER_ID="${{ steps.peers.outputs.node1_id }}"
-          GL1_PEER_ID="${{ steps.peers.outputs.node1_id }}"
           
-          # Genesis node first
+          # Genesis node first (GL1 uses same peer ID since same keystore)
           ssh node1 << SCRIPT
           cd /opt/ottochain
-          cat >> .env << EOF
-          GL1_PEER_ID=$GL1_PEER_ID
-          EOF
           docker compose --profile genesis up -d gl1-initial
           SCRIPT
           
@@ -276,9 +274,6 @@ jobs:
           for host in node2 node3; do
             ssh $host << SCRIPT
             cd /opt/ottochain
-            cat >> .env << EOF
-          GL1_PEER_ID=$GL1_PEER_ID
-          EOF
             docker compose --profile validator up -d gl1-validator
           SCRIPT
           done
@@ -297,21 +292,39 @@ jobs:
       - name: Create ML0 genesis snapshot (node1)
         if: ${{ github.event.inputs.wipe_state != 'false' }}
         run: |
-          ssh node1 << 'SCRIPT'
+          GENESIS_IP="${{ secrets.HETZNER_NODE1_IP }}"
+          GL0_PEER_ID="${{ steps.peers.outputs.node1_id }}"
+          
+          ssh node1 << SCRIPT
           cd /opt/ottochain
           
-          # Generate genesis snapshot
+          # Generate genesis snapshot (note: /genesis must be writable, not :ro)
           docker run --rm \
             -v /opt/ottochain/keys:/keys:ro \
             -v /opt/ottochain/data:/data \
-            -v /opt/ottochain/genesis:/genesis:ro \
+            -v /opt/ottochain/jars:/jars:ro \
+            -v /opt/ottochain/genesis:/genesis \
             -e CL_KEYSTORE=/keys/key.p12 \
-            -e CL_PASSWORD="${CL_PASSWORD}" \
+            -e CL_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }} \
             -e CL_KEYALIAS=alias \
+            -e CL_EXTERNAL_IP=$GENESIS_IP \
+            -e CL_PUBLIC_HTTP_PORT=9200 \
+            -e CL_P2P_HTTP_PORT=9201 \
+            -e CL_CLI_HTTP_PORT=9202 \
+            -e CL_APP_ENV=dev \
+            -e CL_COLLATERAL=0 \
+            -e CL_GLOBAL_L0_PEER_ID=$GL0_PEER_ID \
+            -e CL_GLOBAL_L0_PEER_HTTP_HOST=$GENESIS_IP \
+            -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
             eclipse-temurin:21-jdk \
-            java -jar /data/../jars/metagraph-l0.jar create-genesis /genesis/genesis.csv
-            
-          ls -la data/
+            java -jar /jars/metagraph-l0.jar create-genesis /genesis/genesis.csv
+          
+          # Copy genesis.snapshot to /data for run-genesis command
+          cp /opt/ottochain/genesis/genesis.snapshot /opt/ottochain/data/genesis.snapshot
+          
+          echo "Genesis snapshot created:"
+          ls -la /opt/ottochain/genesis/
+          ls -la /opt/ottochain/data/genesis.snapshot
           SCRIPT
           
       - name: Start ML0 (all nodes)
@@ -320,10 +333,13 @@ jobs:
           GL0_PEER_ID="${{ steps.peers.outputs.node1_id }}"
           ML0_PEER_ID="${{ steps.peers.outputs.node1_id }}"
           
-          # Genesis node first
+          # Update .env on genesis node with ML0_PEER_ID
           ssh node1 << SCRIPT
           cd /opt/ottochain
-          cat >> .env << EOF
+          cat > .env << EOF
+          CL_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }}
+          NODE_IP=$GENESIS_IP
+          GL0_PEER_ID=$GL0_PEER_ID
           ML0_PEER_ID=$ML0_PEER_ID
           EOF
           docker compose --profile genesis up -d ml0-genesis
@@ -340,12 +356,38 @@ jobs:
             sleep 5
           done
           
+          # Get metagraph ID for TOKEN_ID
+          TOKEN_ID=$(ssh node1 'cat /opt/ottochain/genesis/genesis.address' | tr -d '\n')
+          echo "Token ID: $TOKEN_ID"
+          
+          # Update .env on genesis node with TOKEN_ID
+          ssh node1 << SCRIPT
+          cd /opt/ottochain
+          cat > .env << EOF
+          CL_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }}
+          NODE_IP=$GENESIS_IP
+          GL0_PEER_ID=$GL0_PEER_ID
+          ML0_PEER_ID=$ML0_PEER_ID
+          TOKEN_ID=$TOKEN_ID
+          EOF
+          SCRIPT
+          
           # Validators
           for host in node2 node3; do
+            case $host in
+              node2) NODE_IP="${{ secrets.HETZNER_NODE2_IP }}" ;;
+              node3) NODE_IP="${{ secrets.HETZNER_NODE3_IP }}" ;;
+            esac
+            
             ssh $host << SCRIPT
             cd /opt/ottochain
-            cat >> .env << EOF
+            cat > .env << EOF
+          CL_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }}
+          NODE_IP=$NODE_IP
+          GENESIS_IP=$GENESIS_IP
+          GL0_PEER_ID=$GL0_PEER_ID
           ML0_PEER_ID=$ML0_PEER_ID
+          TOKEN_ID=$TOKEN_ID
           EOF
             docker compose --profile validator up -d ml0-validator
           SCRIPT
@@ -362,36 +404,24 @@ jobs:
             sleep 5
           done
           
-      - name: Get Token ID
-        id: token
-        run: |
-          TOKEN_ID=$(ssh node1 'curl -s http://localhost:9200/node/info | jq -r .metagraphId')
-          echo "id=$TOKEN_ID" >> $GITHUB_OUTPUT
-          echo "Token ID: $TOKEN_ID"
-          
       - name: Start CL1 (all nodes)
         run: |
-          TOKEN_ID="${{ steps.token.outputs.id }}"
-          ML0_PEER_ID="${{ steps.peers.outputs.node1_id }}"
+          # Genesis first
+          ssh node1 << SCRIPT
+          cd /opt/ottochain
+          docker compose --profile genesis up -d cl1-initial
+          SCRIPT
           
-          for host in node1 node2 node3; do
-            PROFILE="genesis"
-            SERVICE="cl1-initial"
-            if [ "$host" != "node1" ]; then
-              PROFILE="validator"
-              SERVICE="cl1-validator"
-            fi
-            
+          sleep 30
+          
+          # Validators
+          for host in node2 node3; do
             ssh $host << SCRIPT
             cd /opt/ottochain
-            cat >> .env << EOF
-          TOKEN_ID=$TOKEN_ID
-          EOF
-            docker compose --profile $PROFILE up -d $SERVICE
+            docker compose --profile validator up -d cl1-validator
           SCRIPT
           done
           
-          sleep 30
           echo "Waiting for CL1 cluster..."
           for i in {1..30}; do
             count=$(ssh node1 'curl -s http://localhost:9300/cluster/info 2>/dev/null | jq length' || echo "0")
@@ -405,21 +435,22 @@ jobs:
           
       - name: Start DL1 (all nodes)
         run: |
-          for host in node1 node2 node3; do
-            PROFILE="genesis"
-            SERVICE="dl1-initial"
-            if [ "$host" != "node1" ]; then
-              PROFILE="validator"
-              SERVICE="dl1-validator"
-            fi
-            
+          # Genesis first
+          ssh node1 << SCRIPT
+          cd /opt/ottochain
+          docker compose --profile genesis up -d dl1-initial
+          SCRIPT
+          
+          sleep 30
+          
+          # Validators
+          for host in node2 node3; do
             ssh $host << SCRIPT
             cd /opt/ottochain
-            docker compose --profile $PROFILE up -d $SERVICE
+            docker compose --profile validator up -d dl1-validator
           SCRIPT
           done
           
-          sleep 30
           echo "Waiting for DL1 cluster..."
           for i in {1..30}; do
             count=$(ssh node1 'curl -s http://localhost:9400/cluster/info 2>/dev/null | jq length' || echo "0")
@@ -431,117 +462,22 @@ jobs:
             sleep 5
           done
 
-      - name: Install ML0 watchdog
+      - name: Restart services
         run: |
-          echo "Installing ML0 watchdog cron..."
-          scp scripts/ml0-watchdog.sh node1:/opt/ottochain/scripts/
-          ssh node1 << 'SCRIPT'
-          chmod +x /opt/ottochain/scripts/ml0-watchdog.sh
-          # Add cron if not already present
-          if ! crontab -l 2>/dev/null | grep -q ml0-watchdog; then
-            (crontab -l 2>/dev/null; echo "* * * * * /opt/ottochain/scripts/ml0-watchdog.sh >> /var/log/ml0-watchdog.log 2>&1") | crontab -
-            echo "ML0 watchdog cron installed"
-          else
-            echo "ML0 watchdog cron already exists"
-          fi
-          SCRIPT
-
-  # ============================================
-  # SERVICES: Deploy indexer, explorer, monitor
-  # ============================================
-  services:
-    name: Deploy Services
-    runs-on: ubuntu-latest
-    needs: [deploy]
-    if: always() && needs.deploy.result == 'success'
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/hetzner
-          chmod 600 ~/.ssh/hetzner
-          cat >> ~/.ssh/config << EOF
-          Host services
-            HostName ${{ secrets.HETZNER_SERVICES_IP }}
-            User root
-            IdentityFile ~/.ssh/hetzner
-            StrictHostKeyChecking no
-          EOF
-          
-      - name: Deploy services
-        run: |
-          METAGRAPH_IP="${{ secrets.HETZNER_NODE1_IP }}"
-          
-          ssh services << SCRIPT
-          cd /opt/ottochain-services
-          
-          # Start postgres and redis if not running
-          docker start postgres redis 2>/dev/null || {
-            docker run -d --name postgres \
-              -e POSTGRES_USER=ottochain \
-              -e POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }} \
-              -e POSTGRES_DB=ottochain_identity \
-              -p 5432:5432 \
-              --restart unless-stopped \
-              postgres:15-alpine
-              
-            docker run -d --name redis \
-              -p 6379:6379 \
-              --restart unless-stopped \
-              redis:7-alpine
-          }
-          
+          ssh services << 'SCRIPT'
+          pm2 restart all
           sleep 5
-          
-          # Update env
-          cat > .env << EOF
-          DATABASE_URL=postgresql://ottochain:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/ottochain_identity
-          METAGRAPH_ML0_URL=http://$METAGRAPH_IP:9200
-          METAGRAPH_DL1_URL=http://$METAGRAPH_IP:9400
-          GL0_URL=http://$METAGRAPH_IP:9000
-          GL1_URL=http://$METAGRAPH_IP:9100
-          ML0_URL=http://$METAGRAPH_IP:9200
-          CL1_URL=http://$METAGRAPH_IP:9300
-          DL1_URL=http://$METAGRAPH_IP:9400
-          TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_ALERT_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
-          EOF
-          
-          # Pull latest and rebuild
-          git pull origin main || true
-          pnpm install
-          pnpm run build || true
-          
-          # DB migrations
-          cd packages/indexer
-          npx prisma db push --accept-data-loss || true
-          cd ../..
-          
-          # Source environment and restart services
-          set -a
-          source .env
-          set +a
-          
-          pm2 restart ecosystem.config.cjs || pm2 start ecosystem.config.cjs
-          pm2 save
-          pm2 startup systemd -u root --hp /root 2>/dev/null || true
-          
-          echo "Services status:"
           pm2 list
           SCRIPT
 
   # ============================================
   # HEALTH CHECK
   # ============================================
-  health-check:
+  health:
     name: Health Check
     runs-on: ubuntu-latest
-    needs: [services]
-    if: always()
+    needs: [deploy]
+    if: always() && needs.deploy.result == 'success'
     
     steps:
       - name: Setup SSH
@@ -572,7 +508,7 @@ jobs:
           GL1_CLUSTER=$(ssh node1 'curl -s http://localhost:9100/cluster/info | jq length' 2>/dev/null || echo "0")
           
           ML0_STATE=$(ssh node1 'curl -s http://localhost:9200/node/info | jq -r .state' 2>/dev/null || echo "UNKNOWN")
-          ML0_ORDINAL=$(ssh node1 'curl -s http://localhost:9200/snapshots/latest | jq .ordinal' 2>/dev/null || echo "0")
+          ML0_ORDINAL=$(ssh node1 'curl -s http://localhost:9200/snapshots/latest | jq .value.ordinal' 2>/dev/null || echo "0")
           
           CL1_CLUSTER=$(ssh node1 'curl -s http://localhost:9300/cluster/info | jq length' 2>/dev/null || echo "0")
           DL1_CLUSTER=$(ssh node1 'curl -s http://localhost:9400/cluster/info | jq length' 2>/dev/null || echo "0")
