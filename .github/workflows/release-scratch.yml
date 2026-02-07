@@ -101,7 +101,7 @@ jobs:
     outputs:
       gl0_peer_id: ${{ steps.start-gl0.outputs.gl0_peer_id }}
       ml0_peer_id: ${{ steps.start-ml0.outputs.ml0_peer_id }}
-      token_id: ${{ steps.start-ml0.outputs.token_id }}
+      token_id: ${{ steps.create-ml0-genesis.outputs.token_id }}
 
     steps:
       - name: Checkout
@@ -345,7 +345,55 @@ jobs:
           echo "GL1 cluster size: $GL1_CLUSTER"
 
       # ------------------------------------------
-      # PHASE 6: Start ML0 (Metagraph L0)
+      # PHASE 6: Create ML0 genesis snapshot
+      # ------------------------------------------
+      - name: Create ML0 genesis snapshot
+        id: create-ml0-genesis
+        run: |
+          NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
+          GL0_PEER_ID="${{ steps.start-gl0.outputs.gl0_peer_id }}"
+
+          echo "Creating ML0 genesis snapshot..."
+          ssh node1 << GENESIS_SCRIPT
+          cd /opt/ottochain
+          source .env
+
+          # Run create-genesis to create genesis.snapshot
+          docker run --rm \\
+            -v /opt/ottochain/keys:/keys:ro \\
+            -v /opt/ottochain/jars:/jars:ro \\
+            -v /opt/ottochain/genesis:/genesis \\
+            -v /opt/ottochain/data:/data \\
+            -e CL_KEYSTORE=/keys/key.p12 \\
+            -e CL_KEYALIAS=alias \\
+            -e CL_PASSWORD="\$CL_PASSWORD" \\
+            -e CL_EXTERNAL_IP="\$NODE_IP" \\
+            -e CL_APP_ENV=dev \\
+            -e CL_COLLATERAL=0 \\
+            -e CL_PUBLIC_HTTP_PORT=9200 \\
+            -e CL_P2P_HTTP_PORT=9201 \\
+            -e CL_CLI_HTTP_PORT=9202 \\
+            -e CL_GLOBAL_L0_PEER_ID="\$GL0_PEER_ID" \\
+            -e CL_GLOBAL_L0_PEER_HTTP_HOST="\$NODE_IP" \\
+            -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \\
+            eclipse-temurin:21-jdk \\
+            java -jar /jars/metagraph-l0.jar create-genesis /genesis/genesis.csv
+          GENESIS_SCRIPT
+
+          # Verify genesis.snapshot was created
+          ssh node1 "ls -la /opt/ottochain/genesis/genesis.snapshot" || { echo "::error::genesis.snapshot not created"; exit 1; }
+
+          # Copy to /data for run-genesis
+          ssh node1 "cp /opt/ottochain/genesis/genesis.snapshot /opt/ottochain/data/"
+
+          # Get the metagraph address (TOKEN_ID) from genesis.address
+          TOKEN_ID=$(ssh node1 "cat /opt/ottochain/genesis/genesis.address")
+          echo "Metagraph address (TOKEN_ID): $TOKEN_ID"
+          echo "token_id=$TOKEN_ID" >> "$GITHUB_OUTPUT"
+          ssh node1 "echo '$TOKEN_ID' > /opt/ottochain/token-id"
+
+      # ------------------------------------------
+      # PHASE 7: Start ML0 (Metagraph L0)
       # ------------------------------------------
       - name: Start ML0
         id: start-ml0
@@ -355,7 +403,7 @@ jobs:
           NODE3_IP="${{ secrets.HETZNER_NODE3_IP }}"
           GL0_PEER_ID="${{ steps.start-gl0.outputs.gl0_peer_id }}"
 
-          # ML0 genesis on node1 (.env already has real GL0_PEER_ID)
+          # ML0 genesis on node1 (genesis.snapshot now exists in /data)
           ssh node1 "cd /opt/ottochain && docker compose --profile genesis up -d ml0-genesis"
 
           echo "Waiting for ML0 to become Ready..."
@@ -375,26 +423,9 @@ jobs:
           echo "ML0 Peer ID: ${ML0_PEER_ID:0:24}..."
           ssh node1 "echo '$ML0_PEER_ID' > /opt/ottochain/ml0-peer-id"
 
-          # Get token ID from GL0's latest snapshot
-          echo "Waiting for metagraph to appear in GL0 snapshots..."
-          TOKEN_ID=""
-          for i in $(seq 1 30); do
-            TOKEN_ID=$(ssh node1 'curl -sf http://localhost:9000/global-snapshots/latest | jq -r ".value.stateChannelSnapshots | keys[0]"' || echo "null")
-            if [ -n "$TOKEN_ID" ] && [ "$TOKEN_ID" != "null" ]; then
-              echo "Token ID: $TOKEN_ID"
-              break
-            fi
-            sleep 5
-          done
-
-          # Fallback: metagraphId from ML0 node info
-          if [ -z "$TOKEN_ID" ] || [ "$TOKEN_ID" = "null" ]; then
-            TOKEN_ID=$(ssh node1 'curl -sf http://localhost:9200/node/info | jq -r .metagraphId' || echo "")
-            echo "Token ID (fallback): $TOKEN_ID"
-          fi
-
-          echo "token_id=$TOKEN_ID" >> "$GITHUB_OUTPUT"
-          ssh node1 "echo '$TOKEN_ID' > /opt/ottochain/token-id"
+          # TOKEN_ID already set in create-ml0-genesis step
+          TOKEN_ID=$(ssh node1 "cat /opt/ottochain/token-id")
+          echo "Token ID: $TOKEN_ID"
 
           # Write COMPLETE .env on ALL nodes with all IDs resolved
           /tmp/write-env.sh node1 "$NODE1_IP" "$NODE1_IP" "$GL0_PEER_ID" "$ML0_PEER_ID" "$TOKEN_ID"
