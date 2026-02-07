@@ -81,9 +81,10 @@ services:
       CL_PUBLIC_HTTP_PORT: "9100"
       CL_P2P_HTTP_PORT: "9101"
       CL_CLI_HTTP_PORT: "9102"
-      CL_GLOBAL_L0_PEER_HTTP_HOST: ${NODE_IP}
-      CL_GLOBAL_L0_PEER_HTTP_PORT: "9000"
-      CL_GLOBAL_L0_PEER_ID: ${GL0_PEER_ID}
+      # dag-l1 uses CL_L0_PEER_* (not GLOBAL) to connect to GL0
+      CL_L0_PEER_HTTP_HOST: ${NODE_IP}
+      CL_L0_PEER_HTTP_PORT: "9000"
+      CL_L0_PEER_ID: ${GL0_PEER_ID}
 
   gl1-validator:
     <<: *common
@@ -99,12 +100,10 @@ services:
       CL_PUBLIC_HTTP_PORT: "9100"
       CL_P2P_HTTP_PORT: "9101"
       CL_CLI_HTTP_PORT: "9102"
-      CL_GLOBAL_L0_PEER_HTTP_HOST: ${GENESIS_IP}
-      CL_GLOBAL_L0_PEER_HTTP_PORT: "9000"
-      CL_GLOBAL_L0_PEER_ID: ${GL0_PEER_ID}
+      # dag-l1 validator needs L0 peer (GL0) and L1 peer (GL1 genesis)
       CL_L0_PEER_HTTP_HOST: ${GENESIS_IP}
-      CL_L0_PEER_HTTP_PORT: "9100"
-      CL_L0_PEER_ID: ${GL1_PEER_ID}
+      CL_L0_PEER_HTTP_PORT: "9000"
+      CL_L0_PEER_ID: ${GL0_PEER_ID}
 
   # ============================================
   # ML0 - Metagraph L0 (OttoChain Consensus)
