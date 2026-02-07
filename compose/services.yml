@@ -1,0 +1,91 @@
+# Application services - Gateway, Bridge, Indexer, Monitor
+# Usage: docker compose -f compose/base.yml -f compose/services.yml up -d
+#
+# Requires: SERVICES_IMAGE (or uses ghcr.io/ottobot-ai/ottochain-services:latest)
+
+x-service-common: &service-common
+  image: ${SERVICES_IMAGE:-ghcr.io/ottobot-ai/ottochain-services:latest}
+  restart: unless-stopped
+  networks:
+    - ottochain
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+
+services:
+  gateway:
+    <<: *service-common
+    container_name: gateway
+    command: ["node", "packages/gateway/dist/index.js"]
+    ports:
+      - "${GATEWAY_PORT:-4000}:4000"
+    environment:
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ottochain}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ottochain}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  bridge:
+    <<: *service-common
+    container_name: bridge
+    command: ["node", "packages/bridge/dist/index.js"]
+    ports:
+      - "${BRIDGE_PORT:-3030}:3030"
+    environment:
+      PORT: 3030
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ottochain}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ottochain}
+      REDIS_URL: redis://redis:6379
+      ML0_URL: ${ML0_URL:-http://host.docker.internal:9200}
+      DL1_URL: ${DL1_URL:-http://host.docker.internal:9400}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  indexer:
+    <<: *service-common
+    container_name: indexer
+    command: ["node", "packages/indexer/dist/index.js"]
+    ports:
+      - "${INDEXER_PORT:-3031}:3031"
+    environment:
+      PORT: 3031
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ottochain}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ottochain}
+      REDIS_URL: redis://redis:6379
+      ML0_URL: ${ML0_URL:-http://host.docker.internal:9200}
+      DL1_URL: ${DL1_URL:-http://host.docker.internal:9400}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  monitor:
+    <<: *service-common
+    container_name: monitor
+    command: ["node", "packages/monitor/dist/index.js"]
+    ports:
+      - "${MONITOR_PORT:-3032}:3032"
+    environment:
+      MONITOR_PORT: 3032
+      GL0_URLS: ${GL0_URLS:-http://host.docker.internal:9000}
+      ML0_URLS: ${ML0_URLS:-http://host.docker.internal:9200}
+      DL1_URLS: ${DL1_URLS:-http://host.docker.internal:9400}
+      BRIDGE_URL: http://bridge:3030
+      INDEXER_URL: http://indexer:3031
+      GATEWAY_URL: http://gateway:4000
+      POLL_INTERVAL_MS: ${POLL_INTERVAL_MS:-10000}
+      MONITOR_USER: ${MONITOR_USER:-admin}
+      MONITOR_PASS: ${MONITOR_PASS:-}
+    depends_on:
+      - bridge
+      - indexer
+      - gateway
+
+networks:
+  ottochain:
+    external: true

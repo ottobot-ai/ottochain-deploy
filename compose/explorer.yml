@@ -1,0 +1,23 @@
+# Explorer - React Frontend
+# Usage: docker compose -f compose/base.yml -f compose/services.yml -f compose/explorer.yml up -d
+
+services:
+  explorer:
+    image: ${EXPLORER_IMAGE:-ghcr.io/ottobot-ai/ottochain-explorer:latest}
+    container_name: explorer
+    restart: unless-stopped
+    ports:
+      - "${EXPLORER_PORT:-8080}:80"
+    environment:
+      # These are build-time in React, but some setups support runtime config
+      VITE_API_URL: ${EXPLORER_API_URL:-http://localhost:4000}
+      VITE_WS_URL: ${EXPLORER_WS_URL:-ws://localhost:4000}
+      VITE_BRIDGE_URL: ${EXPLORER_BRIDGE_URL:-http://localhost:3030}
+    networks:
+      - ottochain
+    depends_on:
+      - gateway
+
+networks:
+  ottochain:
+    external: true
