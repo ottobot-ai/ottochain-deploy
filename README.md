@@ -5,25 +5,24 @@ Single source of truth for OttoChain deployment infrastructure.
 ## Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│ ottochain       │     │ ottochain-      │     │ ottochain-      │
-│ (metagraph)     │     │ services        │     │ explorer        │
-│                 │     │                 │     │                 │
-│  CI → JAR       │     │  CI → ghcr.io   │     │  CI → ghcr.io   │
-└────────┬────────┘     └────────┬────────┘     └────────┬────────┘
-         │                       │                       │
-         └───────────────────────┴───────────────────────┘
-                                 │
-                    ┌────────────▼────────────┐
-                    │   ottochain-deploy      │
-                    │                         │
-                    │   versions.yml          │
-                    │   compose/*.yml         │
-                    │   envs/*.env            │
-                    │   monitoring/*          │
-                    │                         │
-                    │   CD → target env       │
-                    └─────────────────────────┘
+┌───────────────┐  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐
+│ ottochain     │  │ ottochain-    │  │ ottochain-    │  │ ottochain-    │
+│ (metagraph)   │  │ services      │  │ explorer      │  │ monitoring    │
+│               │  │               │  │               │  │               │
+│ CI → JAR      │  │ CI → ghcr.io  │  │ CI → ghcr.io  │  │ Configs only  │
+└───────┬───────┘  └───────┬───────┘  └───────┬───────┘  └───────┬───────┘
+        │                  │                  │                  │
+        └──────────────────┴──────────────────┴──────────────────┘
+                                    │
+                       ┌────────────▼────────────┐
+                       │   ottochain-deploy      │
+                       │                         │
+                       │   versions.yml          │
+                       │   compose/*.yml         │
+                       │   envs/*.env            │
+                       │                         │
+                       │   CD → target env       │
+                       └─────────────────────────┘
 ```
 
 ## Quick Start
