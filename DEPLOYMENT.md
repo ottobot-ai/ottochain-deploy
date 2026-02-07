@@ -160,7 +160,7 @@ Save these to `/opt/ottochain/env.sh`:
 
 ```bash
 #!/bin/bash
-export HOST_IP="5.78.90.207"
+export HOST_IP="YOUR_METAGRAPH_IP"
 export GL0_PEER_ID=$(cat /opt/ottochain/gl0-peer-id 2>/dev/null || echo "")
 export ML0_PEER_ID=$(cat /opt/ottochain/ml0-peer-id 2>/dev/null || echo "")
 export TOKEN_ID=$(cat /opt/ottochain/token-id)
@@ -448,4 +448,4 @@ curl -u admin:pass http://localhost:3032/api/status | jq .overall
 
 ---
 *Generated: 2026-02-05*
-*Based on deployment to 5.78.90.207*
+*Based on deployment to YOUR_METAGRAPH_IP*
