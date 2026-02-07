@@ -1,0 +1,38 @@
+# OttoChain Component Versions
+# Update these when deploying new versions
+# CI/CD reads this file to determine which images to deploy
+
+# === Docker Images ===
+images:
+  services: ghcr.io/ottobot-ai/ottochain-services:latest
+  explorer: ghcr.io/ottobot-ai/ottochain-explorer:latest
+  metagraph: eclipse-temurin:21-jdk  # Base image; JARs loaded from volume
+
+# === JAR Versions (Tessellation + OttoChain) ===
+jars:
+  tessellation: "2.10.1"  # dag-l0, dag-l1, currency-l1, data-l1
+  ottochain: "0.5.0"      # metagraph-l0
+
+# === Monitoring Stack ===
+monitoring:
+  prometheus: "v2.50.0"
+  alertmanager: "v0.27.0"
+  grafana: "10.3.1"
+  loki: "2.9.4"
+  promtail: "2.9.4"
+  node_exporter: "v1.7.0"
+  postgres_exporter: "v0.15.0"
+  redis_exporter: "v1.56.0"
+
+# === Infrastructure ===
+infra:
+  postgres: "16-alpine"
+  redis: "7-alpine"
+
+# === Git SHAs (for traceability) ===
+# Updated by CI on each deploy
+git:
+  ottochain: ""           # scasplte2/ottochain commit
+  services: ""            # ottobot-ai/ottochain-services commit
+  explorer: ""            # ottobot-ai/ottochain-explorer commit
+  deploy: ""              # This repo commit
