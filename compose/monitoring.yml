@@ -1,5 +1,13 @@
 # Monitoring stack - Prometheus, Alertmanager, Grafana
 # Usage: docker compose -f compose/base.yml -f compose/monitoring.yml up -d
+#
+# REQUIRES: Clone ottochain-monitoring alongside this repo:
+#   git clone https://github.com/ottobot-ai/ottochain-monitoring.git ../ottochain-monitoring
+#
+# Or set MONITORING_PATH to point to your clone:
+#   MONITORING_PATH=/path/to/ottochain-monitoring docker compose -f compose/monitoring.yml up -d
+
+x-monitoring-path: &monitoring-path ${MONITORING_PATH:-../ottochain-monitoring}
 
 services:
   prometheus:
@@ -9,9 +17,9 @@ services:
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
-      - ../monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ../monitoring/prometheus/alert_rules:/etc/prometheus/alert_rules:ro
-      - ../monitoring/prometheus/recording_rules.yml:/etc/prometheus/recording_rules.yml:ro
+      - ${MONITORING_PATH:-../ottochain-monitoring}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ${MONITORING_PATH:-../ottochain-monitoring}/prometheus/alert_rules:/etc/prometheus/alert_rules:ro
+      - ${MONITORING_PATH:-../ottochain-monitoring}/prometheus/recording_rules.yml:/etc/prometheus/recording_rules.yml:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -34,8 +42,8 @@ services:
     ports:
       - "${ALERTMANAGER_PORT:-9093}:9093"
     volumes:
-      - ../monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-      - ../monitoring/alertmanager/templates:/etc/alertmanager/templates:ro
+      - ${MONITORING_PATH:-../ottochain-monitoring}/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ${MONITORING_PATH:-../ottochain-monitoring}/alertmanager/templates:/etc/alertmanager/templates:ro
       - alertmanager_data:/alertmanager
     command:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
@@ -59,7 +67,7 @@ services:
       GF_UNIFIED_ALERTING_ENABLED: "true"
     volumes:
       - grafana_data:/var/lib/grafana
-      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ${MONITORING_PATH:-../ottochain-monitoring}/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       - prometheus
     networks:

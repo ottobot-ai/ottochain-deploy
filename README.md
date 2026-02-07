@@ -29,9 +29,12 @@ Single source of truth for OttoChain deployment infrastructure.
 ## Quick Start
 
 ```bash
-# Clone
+# Clone deploy repo
 git clone https://github.com/ottobot-ai/ottochain-deploy.git
 cd ottochain-deploy
+
+# Clone monitoring repo (required for monitoring stack)
+git clone https://github.com/ottobot-ai/ottochain-monitoring.git ../ottochain-monitoring
 
 # Set up environment
 cp envs/local.env .env
@@ -146,34 +149,26 @@ To update a version:
 ```
 ottochain-deploy/
 ├── compose/                 # Layered compose files
-│   ├── base.yml
-│   ├── services.yml
-│   ├── explorer.yml
-│   ├── metagraph.yml
-│   ├── monitoring.yml
-│   ├── exporters.yml
-│   ├── logging.yml
-│   └── traffic.yml
-├── monitoring/              # Observability configs
-│   ├── prometheus/
-│   │   ├── prometheus.yml
-│   │   ├── recording_rules.yml
-│   │   └── alert_rules/
-│   ├── alertmanager/
-│   │   ├── alertmanager.yml
-│   │   └── templates/
-│   ├── grafana/provisioning/
-│   ├── loki/
-│   └── promtail/
+│   ├── base.yml             # Redis, Postgres
+│   ├── services.yml         # Gateway, Bridge, Indexer, Monitor
+│   ├── explorer.yml         # React frontend
+│   ├── metagraph.yml        # 5-layer Tessellation stack
+│   ├── monitoring.yml       # References ottochain-monitoring repo
+│   ├── exporters.yml        # Metric exporters
+│   ├── logging.yml          # Loki, Promtail
+│   └── traffic.yml          # Traffic generator
 ├── envs/                    # Environment configs
 │   ├── local.env
 │   ├── testnet.env
 │   └── prod.env.template
 ├── scripts/                 # Deployment scripts
-├── docker/                  # Legacy (metagraph Dockerfiles)
+├── docker/                  # Metagraph Dockerfiles
 ├── versions.yml             # Component version pins
 ├── Makefile                 # Convenience commands
 └── .env                     # Active environment (gitignored)
+
+# Sibling repo (clone alongside):
+../ottochain-monitoring/     # Prometheus, Grafana, Alertmanager configs
 ```
 
 ## Ports
@@ -197,9 +192,27 @@ ottochain-deploy/
 | CL1 | 9300 |
 | DL1 | 9400 |
 
+## Repository Structure
+
+Each repo is independently deployable:
+
+```bash
+# Run any repo standalone
+cd ottochain-services && docker compose up -d
+cd ottochain-explorer && docker compose up -d
+cd ottochain-monitoring && docker compose up -d
+
+# Or use deploy to orchestrate all together
+cd ottochain-deploy && make full
+```
+
 ## Related Repositories
 
-- [ottochain](https://github.com/scasplte2/ottochain) — Metagraph (Scala)
-- [ottochain-services](https://github.com/ottobot-ai/ottochain-services) — TypeScript services
-- [ottochain-explorer](https://github.com/ottobot-ai/ottochain-explorer) — React frontend
-- [ottochain-sdk](https://github.com/ottobot-ai/ottochain-sdk) — TypeScript SDK
+| Repo | Purpose | Standalone? |
+|------|---------|-------------|
+| [ottochain](https://github.com/scasplte2/ottochain) | Metagraph (Scala) | ✅ `just up` |
+| [ottochain-services](https://github.com/ottobot-ai/ottochain-services) | Gateway, Bridge, Indexer | ✅ `docker compose up` |
+| [ottochain-explorer](https://github.com/ottobot-ai/ottochain-explorer) | React frontend | ✅ `docker compose up` |
+| [ottochain-monitoring](https://github.com/ottobot-ai/ottochain-monitoring) | Prometheus, Grafana | ✅ `docker compose up` |
+| [ottochain-sdk](https://github.com/ottobot-ai/ottochain-sdk) | TypeScript SDK | N/A (library) |
+| **ottochain-deploy** | Orchestration | Combines all above |
