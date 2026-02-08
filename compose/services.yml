@@ -56,8 +56,11 @@ services:
       PORT: 3031
       DATABASE_URL: postgresql://${POSTGRES_USER:-ottochain}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ottochain}
       REDIS_URL: redis://redis:6379
-      ML0_URL: ${ML0_URL:-http://host.docker.internal:9200}
-      DL1_URL: ${DL1_URL:-http://host.docker.internal:9400}
+      # Where to find ML0 for state queries and webhook registration
+      METAGRAPH_ML0_URL: ${ML0_URL:-http://host.docker.internal:9200}
+      # Callback URL for ML0 webhook push (must be reachable from ML0 host network)
+      # If not set, indexer falls back to polling only (slower)
+      INDEXER_CALLBACK_URL: ${INDEXER_CALLBACK_URL:-}
     depends_on:
       postgres:
         condition: service_healthy

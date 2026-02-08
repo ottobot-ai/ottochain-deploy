@@ -369,6 +369,37 @@ MONITOR_PORT=3032         # Dashboard port
 # Authentication (optional - auto-generates password if not set)
 MONITOR_USER=admin
 MONITOR_PASS=your-secure-password
+
+# Webhook Configuration (indexer ↔ ML0)
+# The indexer registers as a webhook subscriber to receive ML0 notifications
+# URL must be reachable from metagraph nodes (which use host network mode)
+INDEXER_CALLBACK_URL=http://services-ip:3031/webhook/snapshot
+```
+
+### Webhook Notifications
+
+The indexer receives push notifications from ML0 for:
+- **Snapshot finalization** (`/webhook/snapshot`) - Real-time indexing
+- **Transaction rejections** (`/webhook/rejection`) - Validation failure tracking
+
+On startup, the indexer automatically registers with ML0 via:
+```
+POST http://<ML0>/data-application/v1/webhooks/subscribe
+```
+
+Since ML0 uses host network mode, `INDEXER_CALLBACK_URL` must be the actual
+IP of the services host (not Docker DNS names like `indexer` or `host.docker.internal`).
+
+**Rejection tracking endpoints:**
+```bash
+# List rejections (with optional filters)
+GET http://services-ip:3031/rejections?fiberId=<uuid>&updateType=<type>
+
+# Get specific rejection by updateHash
+GET http://services-ip:3031/rejections/<updateHash>
+
+# Get rejections for a specific fiber
+GET http://services-ip:3031/fibers/<fiberId>/rejections
 ```
 
 ### Accessing the Dashboard
