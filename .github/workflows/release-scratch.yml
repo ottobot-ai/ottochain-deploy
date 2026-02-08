@@ -173,6 +173,29 @@ jobs:
             ssh $host 'mkdir -p /opt/ottochain/data/{ml0,cl1,dl1}'
           done
 
+      - name: Reset database and Redis
+        if: ${{ github.event.inputs.wipe_state != 'false' }}
+        run: |
+          echo "Flushing Postgres and Redis on services node..."
+          ssh services << 'RESET_SCRIPT'
+          # Flush Redis
+          docker exec redis redis-cli FLUSHALL || echo "Redis flush failed (may not be running)"
+          
+          # Truncate all Postgres tables
+          docker exec postgres psql -U ottochain -d ottochain_identity -c "
+            DO \$\$
+            DECLARE
+              r RECORD;
+            BEGIN
+              FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                EXECUTE 'TRUNCATE TABLE \"' || r.tablename || '\" CASCADE';
+              END LOOP;
+            END \$\$;
+          " || echo "Postgres truncate failed (may not be running or tables don't exist yet)"
+          
+          echo "Database and Redis reset complete"
+          RESET_SCRIPT
+
       # ------------------------------------------
       # PHASE 2: Deploy files to all nodes
       # ------------------------------------------
