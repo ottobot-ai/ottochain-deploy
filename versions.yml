@@ -1,17 +1,44 @@
 # OttoChain Component Versions
-# Update these when deploying new versions
-# CI/CD reads this file to determine which images to deploy
+# ===========================================
+# This is the SOURCE OF TRUTH for all deployments.
+# Update versions here, merge to main, deploy triggers automatically.
+#
+# Lifecycle:
+#   1. Tag release in component repo (e.g., ottochain-services v0.2.0)
+#   2. CI builds/pushes artifact (Docker image or JAR)
+#   3. PR to update this file with new version
+#   4. Merge triggers release-scratch.yml → deploys to scratch env
+#
+# ===========================================
 
-# === Docker Images ===
-images:
-  services: ghcr.io/ottobot-ai/ottochain-services:latest
-  explorer: ghcr.io/ottobot-ai/ottochain-explorer:latest
-  metagraph: eclipse-temurin:21-jdk  # Base image; JARs loaded from volume
-
-# === JAR Versions (Tessellation + OttoChain) ===
-jars:
-  tessellation: "2.10.1"  # dag-l0, dag-l1, currency-l1, data-l1
-  ottochain: "0.5.0"      # metagraph-l0
+# === Component Versions ===
+components:
+  # OttoChain metagraph (Scala) - builds JARs
+  ottochain:
+    version: "0.5.0"
+    repo: "scasplte2/ottochain"
+    
+  # Tessellation SDK version (external dependency)
+  tessellation:
+    version: "4.0.0-rc.2"
+    repo: "Constellation-Labs/tessellation"
+    
+  # OttoChain SDK (TypeScript) - npm package
+  sdk:
+    version: "0.1.0"
+    repo: "ottobot-ai/ottochain-sdk"
+    
+  # OttoChain Services (TypeScript) - Docker image
+  services:
+    version: "0.2.0"
+    image: "ghcr.io/ottobot-ai/ottochain-services"
+    repo: "ottobot-ai/ottochain-services"
+    
+  # OttoChain Explorer (TypeScript) - Docker image
+  explorer:
+    version: "0.1.0"
+    image: "ghcr.io/ottobot-ai/ottochain-explorer"
+    repo: "ottobot-ai/ottochain-explorer"
 
 # === Monitoring Stack ===
 monitoring:
@@ -28,11 +55,14 @@ monitoring:
 infra:
   postgres: "16-alpine"
   redis: "7-alpine"
+  java: "21"
 
-# === Git SHAs (for traceability) ===
-# Updated by CI on each deploy
-git:
-  ottochain: ""           # scasplte2/ottochain commit
-  services: ""            # ottobot-ai/ottochain-services commit
-  explorer: ""            # ottobot-ai/ottochain-explorer commit
-  deploy: ""              # This repo commit
+# === Deployed State (updated by CI after successful deploy) ===
+# These are the ACTUAL versions running in each environment
+deployed:
+  scratch:
+    ottochain: ""
+    services: ""
+    explorer: ""
+    timestamp: ""
+    workflow_run: ""
