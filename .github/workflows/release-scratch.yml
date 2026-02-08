@@ -173,29 +173,6 @@ jobs:
             ssh $host 'mkdir -p /opt/ottochain/data/{ml0,cl1,dl1}'
           done
 
-      - name: Reset database and Redis
-        if: ${{ github.event.inputs.wipe_state != 'false' }}
-        run: |
-          echo "Flushing Postgres and Redis on services node..."
-          ssh services << 'RESET_SCRIPT'
-          # Flush Redis
-          docker exec redis redis-cli FLUSHALL || echo "Redis flush failed (may not be running)"
-          
-          # Truncate all Postgres tables
-          docker exec postgres psql -U ottochain -d ottochain_identity -c "
-            DO \$\$
-            DECLARE
-              r RECORD;
-            BEGIN
-              FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
-                EXECUTE 'TRUNCATE TABLE \"' || r.tablename || '\" CASCADE';
-              END LOOP;
-            END \$\$;
-          " || echo "Postgres truncate failed (may not be running or tables don't exist yet)"
-          
-          echo "Database and Redis reset complete"
-          RESET_SCRIPT
-
       # ------------------------------------------
       # PHASE 2: Deploy files to all nodes
       # ------------------------------------------
@@ -588,13 +565,12 @@ jobs:
             StrictHostKeyChecking no
           EOF
 
-      - name: Deploy services
+      - name: Start database containers
         run: |
-          METAGRAPH_IP="${{ secrets.HETZNER_NODE1_IP }}"
-
           ssh services << 'SERVICES_SCRIPT'
           cd /opt/ottochain-services
 
+          # Start existing containers or create new ones
           docker start postgres redis 2>/dev/null || {
             docker run -d --name postgres \
               -e POSTGRES_USER=ottochain \
@@ -610,8 +586,37 @@ jobs:
               redis:7-alpine
           }
 
+          # Wait for containers to be ready
           sleep 5
+          
+          # Verify containers are running
+          docker ps --format "table {{.Names}}\t{{.Status}}" | grep -E "postgres|redis" || echo "Warning: containers may not be running"
           SERVICES_SCRIPT
+
+      - name: Reset database and Redis
+        if: ${{ github.event.inputs.wipe_state != 'false' }}
+        run: |
+          echo "Flushing Postgres and Redis..."
+          ssh services << 'RESET_SCRIPT'
+          # Flush Redis
+          docker exec redis redis-cli FLUSHALL && echo "✓ Redis flushed" || echo "✗ Redis flush failed"
+          
+          # Truncate all Postgres tables (if database exists)
+          docker exec postgres psql -U ottochain -d ottochain_identity -c "
+            DO \$\$
+            DECLARE
+              r RECORD;
+            BEGIN
+              FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                EXECUTE 'TRUNCATE TABLE \"' || r.tablename || '\" CASCADE';
+              END LOOP;
+            END \$\$;
+          " && echo "✓ Postgres tables truncated" || echo "✗ Postgres truncate failed (tables may not exist yet)"
+          RESET_SCRIPT
+
+      - name: Deploy services
+        run: |
+          METAGRAPH_IP="${{ secrets.HETZNER_NODE1_IP }}"
 
           # Write services .env from runner (so secrets expand)
           ssh services "cat > /opt/ottochain-services/.env" << SERVICES_ENV
