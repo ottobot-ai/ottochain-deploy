@@ -58,6 +58,10 @@ services:
       REDIS_URL: redis://redis:6379
       ML0_URL: ${ML0_URL:-http://host.docker.internal:9200}
       DL1_URL: ${DL1_URL:-http://host.docker.internal:9400}
+      # Webhook callback URL - ML0 pushes snapshot/rejection notifications here
+      # ML0 runs on host network, so use host IP or host.docker.internal
+      INDEXER_CALLBACK_URL: ${INDEXER_CALLBACK_URL:-http://host.docker.internal:3031/webhook/snapshot}
+      METAGRAPH_ML0_URL: ${ML0_URL:-http://host.docker.internal:9200}
     depends_on:
       postgres:
         condition: service_healthy
