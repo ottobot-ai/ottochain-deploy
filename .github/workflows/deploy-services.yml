@@ -121,7 +121,8 @@ jobs:
 
           ssh services << 'DEPLOY_SCRIPT'
           cd /opt/ottochain-services
-          git pull origin main || true
+          git fetch origin main
+          git reset --hard origin/main
           
           # Stop PM2 if running (migration from old setup)
           pm2 stop all 2>/dev/null || true
