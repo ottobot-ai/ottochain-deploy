@@ -23,10 +23,12 @@ components:
     version: "4.0.0-rc.2"
     repo: "Constellation-Labs/tessellation"
     
-  # OttoChain SDK (TypeScript) - npm package
+  # OttoChain SDK (TypeScript) - published to npmjs.com as @ottochain/sdk
   sdk:
-    version: "0.1.0"
+    version: "0.2.0"
     repo: "ottobot-ai/ottochain-sdk"
+    package: "@ottochain/sdk"
+    registry: "https://registry.npmjs.org"
     
   # OttoChain Services (TypeScript) - Docker image
   services:
