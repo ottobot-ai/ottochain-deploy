@@ -346,7 +346,7 @@ git push origin release/scratch
 |----------|------|--------|--------|
 | P0 | Add metagraph release workflow | ✅ Done (PR #39) | 2h |
 | P0 | Add version-bump automation | ✅ Done (this PR) | 3h |
-| P1 | Add integration test gate | TODO | 2h |
+| P1 | Add smoke test gate | ✅ Done (smoke-test.yml) | 2h |
 | P1 | Add SDK auto-publish to npm | TODO | 1h |
 | P2 | Add rollback workflow | TODO | 1h |
 | P2 | Add deploy plan/diff step | TODO | 1h |
