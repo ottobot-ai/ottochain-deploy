@@ -1,0 +1,312 @@
+# OttoChain Build & Deploy System Audit
+
+*Generated: 2026-02-09*
+
+## Executive Summary
+
+The ecosystem has a solid Docker-based deploy system with version management via `versions.yml`. Key gaps exist around metagraph releases and automated version bumps.
+
+---
+
+## Current Architecture
+
+### Repositories
+
+| Repo | Purpose | Artifacts | Release Flow |
+|------|---------|-----------|--------------|
+| `scasplte2/ottochain` | Metagraph Scala code | JARs (built on deploy) | ❌ No releases |
+| `ottobot-ai/ottochain-sdk` | TypeScript SDK | npm package | ✅ `v0.2.0` |
+| `ottobot-ai/ottochain-services` | Bridge/Indexer | Docker image | ✅ `v0.2.0` |
+| `ottobot-ai/ottochain-explorer` | Web UI | Docker image | ✅ `v0.1.0` |
+| `ottobot-ai/ottochain-deploy` | Deploy configs | Workflows | N/A |
+
+### Version Management
+
+**Source of truth**: `ottochain-deploy/versions.yml`
+
+```yaml
+components:
+  ottochain:     { version: "0.5.0", repo: "scasplte2/ottochain" }
+  tessellation:  { version: "4.0.0-rc.2" }
+  sdk:           { version: "0.2.0", package: "@ottochain/sdk" }
+  services:      { version: "0.2.0", image: "ghcr.io/..." }
+  explorer:      { version: "0.1.0", image: "ghcr.io/..." }
+```
+
+### Deploy Workflows
+
+| Workflow | Trigger | What it does |
+|----------|---------|--------------|
+| `deploy-full.yml` | Push to `release/*` branches, manual | Full stack deployment |
+| `deploy-metagraph.yml` | Called by deploy-full | Build JARs, deploy 5-layer cluster |
+| `deploy-services.yml` | Called by deploy-full | Docker compose on services node |
+| `deploy-monitoring.yml` | Called by deploy-full | Prometheus/Grafana stack |
+
+---
+
+## How to Release a New Version
+
+### 1. Services or Explorer (TypeScript)
+
+```bash
+# In component repo
+git tag v0.3.0
+git push origin v0.3.0
+
+# This triggers release.yml which:
+# - Builds Docker image
+# - Pushes to ghcr.io
+# - Creates GitHub Release
+```
+
+Then update versions.yml:
+```bash
+cd ottochain-deploy
+# Edit versions.yml: services.version = "0.3.0"
+git commit -am "chore: bump services to v0.3.0"
+git push origin main
+```
+
+### 2. OttoChain SDK (npm)
+
+```bash
+cd ottochain-sdk
+npm version patch  # or minor/major
+git push origin main --tags
+
+# Publish to npm
+npm publish --access public
+```
+
+Then update versions.yml in deploy repo.
+
+### 3. OttoChain Metagraph (Scala)
+
+**Currently**: No release workflow. JARs built from branch/commit at deploy time.
+
+```bash
+# Update versions.yml
+components:
+  ottochain:
+    version: "0.6.0"  # Semantic version for tracking
+    ref: "v0.6.0"     # Git ref to build from (tag/branch/sha)
+```
+
+---
+
+## Deploying a Compatible Set
+
+### Option A: Full Stack Deploy (Recommended)
+
+```bash
+# From GitHub Actions UI:
+# 1. Go to ottochain-deploy → Actions → Deploy Full Stack
+# 2. Select environment (scratch/beta/staging/prod)
+# 3. Optionally override versions
+# 4. Run workflow
+```
+
+Or via push:
+```bash
+cd ottochain-deploy
+git checkout release/scratch
+git merge main
+git push origin release/scratch
+# Triggers deploy-full.yml automatically
+```
+
+### Option B: Individual Component Deploy
+
+```bash
+# Metagraph only
+gh workflow run deploy-metagraph.yml \
+  -f environment=scratch \
+  -f metagraph_version=main \
+  -f wipe_state=false
+
+# Services only
+gh workflow run deploy-services.yml \
+  -f environment=scratch \
+  -f services_version=v0.2.0
+
+# Monitoring only
+gh workflow run deploy-monitoring.yml \
+  -f environment=scratch
+```
+
+### Verification After Deploy
+
+```bash
+# Check services versions
+curl -s http://services-ip:3030/version | jq .
+curl -s http://services-ip:8080/api/version | jq .
+
+# Check metagraph
+curl -s http://node1-ip:9200/version | jq .  # ML0
+curl -s http://node1-ip:9400/version | jq .  # DL1
+
+# Check deployed state in versions.yml
+yq '.deployed.scratch' versions.yml
+```
+
+---
+
+## Identified Gaps
+
+### 🔴 Critical
+
+1. **No metagraph releases**
+   - JARs built fresh on every deploy from branch
+   - No artifact caching or versioned JARs
+   - Can't easily rollback to previous metagraph version
+   
+   **Recommendation**: Add release workflow to `scasplte2/ottochain`:
+   ```yaml
+   # On tag push:
+   # 1. Build JARs
+   # 2. Upload to GitHub Release as assets
+   # 3. deploy-metagraph.yml downloads from release instead of building
+   ```
+
+2. **No automated version bump PRs**
+   - When services releases v0.3.0, someone must manually update versions.yml
+   - Easy to forget, leads to drift
+   
+   **Recommendation**: Add repository_dispatch webhook from component repos:
+   ```yaml
+   # In services release.yml, after Docker push:
+   - name: Notify deploy repo
+     run: |
+       gh api repos/ottobot-ai/ottochain-deploy/dispatches \
+         -f event_type=version-bump \
+         -f client_payload='{"component":"services","version":"$VERSION"}'
+   ```
+
+### 🟡 Important
+
+3. **SDK not auto-published on tag**
+   - release.yml builds Docker but SDK publish is manual
+   - Should `npm publish` in the workflow
+   
+4. **No integration test gate before deploy**
+   - deploy-full.yml doesn't run integration tests
+   - Could deploy broken combination
+   
+   **Recommendation**: Add job that runs services integration tests before deploy
+
+5. **Deployed state tracking incomplete**
+   - `versions.yml` has `deployed:` section but it's updated after deploy
+   - No pre-deploy diff showing what will change
+   
+   **Recommendation**: Add "Plan" step showing version changes before deploy
+
+### 🟢 Minor
+
+6. **No rollback workflow**
+   - Manual process to deploy previous versions
+   - Could add `rollback.yml` that reads last good deploy
+
+7. **Environment-specific version overrides**
+   - Currently all envs use same versions.yml
+   - Beta might need different versions than prod
+   
+   **Recommendation**: Support `versions.{env}.yml` overrides
+
+8. **Missing health check retry loop**
+   - deploy-services.yml checks health once
+   - Should retry with backoff for slow starts
+
+---
+
+## Version Compatibility Rules
+
+```
+Tessellation SDK ←── exact match ──→ OttoChain Metagraph
+        │
+        └── build dep ──→ OttoChain SDK ←── package dep ──→ Services
+                                                    │
+                                                    └──→ Explorer
+```
+
+**Constraints**:
+- Metagraph's `build.sbt` tessellation version MUST match cluster
+- Services' `package.json` SDK version should match latest published
+- Explorer uses Services API (backward compatible expected)
+
+---
+
+## Proposed Enhanced Workflow
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    Component Repo (e.g. services)                 │
+│  1. PR merged to main                                            │
+│  2. Dev decides to release                                       │
+│  3. git tag v0.3.0 && git push --tags                           │
+│  4. release.yml: build image → push ghcr → create GH release    │
+│  5. Webhook to deploy repo: "services v0.3.0 released"          │
+└─────────────────────────────┬────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                    Deploy Repo                                    │
+│  6. version-bump.yml: create PR updating versions.yml            │
+│  7. Human reviews, approves, merges                              │
+│  8. Push to release/scratch triggers deploy-full.yml             │
+│  9. Integration tests run first                                  │
+│  10. If pass: deploy metagraph → services → monitoring          │
+│  11. Update deployed state in versions.yml                       │
+│  12. Notify success/failure                                      │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Quick Reference
+
+### Propose New Version
+```bash
+# Edit versions.yml, create PR
+cd ottochain-deploy
+vim versions.yml  # bump component version
+./scripts/generate-compatibility.sh
+git add -A && git commit -m "chore: bump services to v0.3.0"
+gh pr create --title "Release: services v0.3.0"
+```
+
+### Deploy to Scratch
+```bash
+# After PR merged
+git checkout release/scratch
+git merge main
+git push origin release/scratch
+# Or: gh workflow run deploy-full.yml -f environment=scratch
+```
+
+### Check What's Deployed
+```bash
+yq '.deployed' versions.yml
+# Or check live:
+curl -s http://5.78.121.248:8080/api/version | jq .
+```
+
+### Emergency Rollback
+```bash
+# Revert versions.yml to previous commit
+git revert HEAD
+git push origin release/scratch
+# Triggers redeploy with previous versions
+```
+
+---
+
+## Action Items
+
+| Priority | Item | Owner | Effort |
+|----------|------|-------|--------|
+| P0 | Add metagraph release workflow | TBD | 2h |
+| P0 | Add version-bump automation | TBD | 3h |
+| P1 | Add integration test gate | TBD | 2h |
+| P1 | Add SDK auto-publish to npm | TBD | 1h |
+| P2 | Add rollback workflow | TBD | 1h |
+| P2 | Add deploy plan/diff step | TBD | 1h |
