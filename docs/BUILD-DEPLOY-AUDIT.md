@@ -4,7 +4,7 @@
 
 ## Executive Summary
 
-The ecosystem has a solid Docker-based deploy system with version management via `versions.yml`. Key gaps exist around metagraph releases and automated version bumps.
+The ecosystem has a solid Docker-based deploy system with version management via `versions.yml`. Metagraph releases are now fully supported via Docker images (PR #39 + PR #21). The main remaining gap is automated version bump PRs when components release new versions.
 
 ---
 
