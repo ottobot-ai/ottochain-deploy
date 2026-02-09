@@ -1,0 +1,49 @@
+name: Promote Environment
+
+# TODO: Implement when beta/staging environments are ready
+# This workflow will:
+#   1. Run smoke tests against source environment
+#   2. If pass, deploy same versions to target environment
+#   3. Run smoke tests against target
+#   4. Report success/failure
+
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: 'Source environment'
+        required: true
+        type: choice
+        options:
+          - scratch
+          # - beta
+          # - staging
+      to:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - beta
+          # - staging
+          # - prod
+
+jobs:
+  promote:
+    name: Promote ${{ inputs.from }} → ${{ inputs.to }}
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Stub
+        run: |
+          echo "## 🚧 Promotion Pipeline - Not Yet Implemented" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "This workflow will be implemented when additional environments are ready." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Planned flow:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Run smoke tests on \`${{ inputs.from }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "2. If pass, deploy to \`${{ inputs.to }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. Run smoke tests on \`${{ inputs.to }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "4. Report results" >> $GITHUB_STEP_SUMMARY
+          echo ""
+          echo "Promotion pipeline is stubbed. Configure beta environment first."
+          exit 0
