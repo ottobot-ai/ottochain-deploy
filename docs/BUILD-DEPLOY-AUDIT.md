@@ -212,25 +212,19 @@ yq '.deployed.scratch' versions.yml
    - Deploy workflows pull image instead of building JARs
    - Rollback = deploy previous image tag
 
+2. **Automated version bump PRs** — SOLVED by this PR
+   - Component repos send `repository_dispatch` after release
+   - `version-bump.yml` receives dispatch, creates PR updating `versions.yml`
+   - Human reviews/merges → triggers deploy
+   - Implemented in: ottochain (#42), services (#67), explorer (#25), monitoring (#1)
+
 ### 🔴 Critical
 
-1. **No automated version bump PRs**
-   - When services releases v0.3.0, someone must manually update versions.yml
-   - Easy to forget, leads to drift
-   
-   **Recommendation**: Add repository_dispatch webhook from component repos:
-   ```yaml
-   # In services release.yml, after Docker push:
-   - name: Notify deploy repo
-     run: |
-       gh api repos/ottobot-ai/ottochain-deploy/dispatches \
-         -f event_type=version-bump \
-         -f client_payload='{"component":"services","version":"$VERSION"}'
-   ```
+(None remaining)
 
 ### 🟡 Important
 
-3. **SDK not auto-published on tag**
+1. **SDK not auto-published on tag**
    - release.yml builds Docker but SDK publish is manual
    - Should `npm publish` in the workflow
    
@@ -348,11 +342,11 @@ git push origin release/scratch
 
 ## Action Items
 
-| Priority | Item | Owner | Effort |
-|----------|------|-------|--------|
-| P0 | Add metagraph release workflow | TBD | 2h |
-| P0 | Add version-bump automation | TBD | 3h |
-| P1 | Add integration test gate | TBD | 2h |
-| P1 | Add SDK auto-publish to npm | TBD | 1h |
-| P2 | Add rollback workflow | TBD | 1h |
-| P2 | Add deploy plan/diff step | TBD | 1h |
+| Priority | Item | Status | Effort |
+|----------|------|--------|--------|
+| P0 | Add metagraph release workflow | ✅ Done (PR #39) | 2h |
+| P0 | Add version-bump automation | ✅ Done (this PR) | 3h |
+| P1 | Add integration test gate | TODO | 2h |
+| P1 | Add SDK auto-publish to npm | TODO | 1h |
+| P2 | Add rollback workflow | TODO | 1h |
+| P2 | Add deploy plan/diff step | TODO | 1h |
