@@ -19,6 +19,7 @@ The ecosystem has a solid Docker-based deploy system with version management via
 | `ottobot-ai/ottochain-services` | Bridge/Indexer | Docker image | ✅ `v0.2.0` |
 | `ottobot-ai/ottochain-explorer` | Web UI | Docker image | ✅ `v0.1.0` |
 | `ottobot-ai/ottochain-deploy` | Deploy configs | Workflows | Pure Docker (PR #21) |
+| `ottobot-ai/ottochain-monitoring` | Monitoring stack | Prometheus/Grafana configs | Deployed via `deploy-monitoring.yml` |
 
 ### Docker-First Architecture (NEW)
 
@@ -52,9 +53,41 @@ components:
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
 | `deploy-full.yml` | Push to `release/*` branches, manual | Full stack deployment |
-| `deploy-metagraph.yml` | Called by deploy-full | Build JARs, deploy 5-layer cluster |
+| `deploy-metagraph.yml` | Called by deploy-full | Pull Docker image, deploy 5-layer cluster |
 | `deploy-services.yml` | Called by deploy-full | Docker compose on services node |
-| `deploy-monitoring.yml` | Called by deploy-full | Prometheus/Grafana stack |
+| `deploy-monitoring.yml` | Called by deploy-full | Prometheus/Grafana/Alertmanager stack |
+
+### Monitoring Stack
+
+**Repository**: `ottobot-ai/ottochain-monitoring`
+
+**Components** (from `versions.yml`):
+| Component | Version | Purpose |
+|-----------|---------|---------|
+| Prometheus | v2.50.0 | Metrics collection |
+| Grafana | 10.3.1 | Dashboards |
+| Alertmanager | v0.27.0 | Alert routing |
+| Loki | 2.9.4 | Log aggregation |
+| Promtail | 2.9.4 | Log shipping |
+| node_exporter | v1.7.0 | Host metrics |
+| postgres_exporter | v0.15.0 | Postgres metrics |
+| redis_exporter | v1.56.0 | Redis metrics |
+
+**Deployment**:
+1. `deploy-monitoring.yml` clones `ottochain-monitoring` repo
+2. Generates `prometheus/targets.yml` with cluster node IPs
+3. Deploys Docker compose stack to services node
+4. Optionally deploys node-exporter to metagraph nodes (`include_exporters` flag)
+
+**Targets auto-discovered**:
+- Node exporters on all 3 metagraph nodes (port 9100)
+- Tessellation layers on each node (ports 9000, 9100, 9200, 9300, 9400)
+- Services node exporters (Postgres, Redis)
+
+**Access**:
+- Grafana: `http://services-ip:3000`
+- Prometheus: `http://services-ip:9090`
+- Alertmanager: `http://services-ip:9093`
 
 ---
 
@@ -158,6 +191,10 @@ curl -s http://services-ip:8080/api/version | jq .
 # Check metagraph
 curl -s http://node1-ip:9200/version | jq .  # ML0
 curl -s http://node1-ip:9400/version | jq .  # DL1
+
+# Check monitoring
+curl -s http://services-ip:9090/-/healthy  # Prometheus
+curl -s http://services-ip:3000/api/health | jq .  # Grafana
 
 # Check deployed state in versions.yml
 yq '.deployed.scratch' versions.yml
