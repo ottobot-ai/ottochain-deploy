@@ -33,12 +33,18 @@ services:
     build:
       context: ./app
       dockerfile: Dockerfile
+      args:
+        - GIT_SHA=${GIT_SHA:-unknown}
+        - BUILD_TIME=${BUILD_TIME:-unknown}
+        - VERSION=${VERSION:-0.0.0}
     restart: unless-stopped
     environment:
       - PORT=3030
       - ML0_URL=http://node1:9200
       - DL1_URL=http://node1:9400
       - DATABASE_URL=postgresql://${POSTGRES_USER:-ottochain}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ottochain}
+      - GIT_SHA=${GIT_SHA:-unknown}
+      - BUILD_TIME=${BUILD_TIME:-unknown}
     ports:
       - "3030:3030"
     depends_on:
@@ -53,6 +59,10 @@ services:
     build:
       context: ./app
       dockerfile: Dockerfile
+      args:
+        - GIT_SHA=${GIT_SHA:-unknown}
+        - BUILD_TIME=${BUILD_TIME:-unknown}
+        - VERSION=${VERSION:-0.0.0}
     restart: unless-stopped
     command: ["node", "packages/indexer/dist/index.js"]
     environment:
@@ -60,6 +70,8 @@ services:
       - ML0_URL=http://node1:9200
       - DATABASE_URL=postgresql://${POSTGRES_USER:-ottochain}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ottochain}
       - REDIS_URL=redis://redis:6379
+      - GIT_SHA=${GIT_SHA:-unknown}
+      - BUILD_TIME=${BUILD_TIME:-unknown}
     ports:
       - "3031:3031"
     depends_on:
@@ -76,12 +88,18 @@ services:
     build:
       context: ./app
       dockerfile: Dockerfile
+      args:
+        - GIT_SHA=${GIT_SHA:-unknown}
+        - BUILD_TIME=${BUILD_TIME:-unknown}
+        - VERSION=${VERSION:-0.0.0}
     restart: unless-stopped
     command: ["node", "packages/gateway/dist/index.js"]
     environment:
       - PORT=4000
       - DATABASE_URL=postgresql://${POSTGRES_USER:-ottochain}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ottochain}
       - REDIS_URL=redis://redis:6379
+      - GIT_SHA=${GIT_SHA:-unknown}
+      - BUILD_TIME=${BUILD_TIME:-unknown}
     ports:
       - "4000:4000"
     depends_on:
@@ -94,6 +112,10 @@ services:
     build:
       context: ./app
       dockerfile: Dockerfile
+      args:
+        - GIT_SHA=${GIT_SHA:-unknown}
+        - BUILD_TIME=${BUILD_TIME:-unknown}
+        - VERSION=${VERSION:-0.0.0}
     restart: unless-stopped
     command: ["node", "packages/monitor/dist/index.js"]
     environment:
@@ -111,6 +133,10 @@ services:
       # Auth (set your own password, or leave blank for auto-generated)
       - MONITOR_USER=admin
       - MONITOR_PASS=${MONITOR_PASS:-}
+      # Debug/version info (passed through from build or runtime)
+      - GIT_SHA=${GIT_SHA:-unknown}
+      - BUILD_TIME=${BUILD_TIME:-unknown}
+      - DEBUG=${DEBUG:-false}
     ports:
       - "3032:3032"
     depends_on:
