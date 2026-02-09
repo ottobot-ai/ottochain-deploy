@@ -1,0 +1,100 @@
+name: Version Bump PR
+
+on:
+  repository_dispatch:
+    types: [version-bump]
+  workflow_dispatch:
+    inputs:
+      component:
+        description: 'Component to bump (ottochain, services, explorer, sdk)'
+        required: true
+        type: choice
+        options:
+          - ottochain
+          - services
+          - explorer
+          - sdk
+      version:
+        description: 'Version (without v prefix, e.g., 0.3.0)'
+        required: true
+        type: string
+
+jobs:
+  create-pr:
+    name: Create Version Bump PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine component and version
+        id: params
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            COMPONENT="${{ github.event.client_payload.component }}"
+            VERSION="${{ github.event.client_payload.version }}"
+          else
+            COMPONENT="${{ inputs.component }}"
+            VERSION="${{ inputs.version }}"
+          fi
+          # Strip 'v' prefix if present
+          VERSION="${VERSION#v}"
+          echo "component=$COMPONENT" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "branch=bump/$COMPONENT-v$VERSION" >> $GITHUB_OUTPUT
+          echo "Bumping $COMPONENT to v$VERSION"
+
+      - name: Setup yq
+        uses: mikefarah/yq@v4
+
+      - name: Update versions.yml
+        run: |
+          COMPONENT="${{ steps.params.outputs.component }}"
+          VERSION="${{ steps.params.outputs.version }}"
+          
+          echo "Updating components.$COMPONENT.version to $VERSION"
+          yq -i ".components.$COMPONENT.version = \"$VERSION\"" versions.yml
+          
+          echo "Updated versions.yml:"
+          cat versions.yml
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: bump ${{ steps.params.outputs.component }} to v${{ steps.params.outputs.version }}"
+          title: "Release: ${{ steps.params.outputs.component }} v${{ steps.params.outputs.version }}"
+          body: |
+            Automated version bump triggered by release in component repo.
+            
+            ## Changes
+            - `${{ steps.params.outputs.component }}` → `v${{ steps.params.outputs.version }}`
+            
+            ## Deploy
+            After merging, push to a `release/*` branch to trigger deployment:
+            ```bash
+            git checkout release/scratch
+            git merge main
+            git push origin release/scratch
+            ```
+            
+            ---
+            *Triggered by: ${{ github.event_name }}*
+          branch: ${{ steps.params.outputs.branch }}
+          delete-branch: true
+          labels: |
+            release
+            automated
+
+      - name: Summary
+        run: |
+          echo "## 🔄 Version Bump PR Created" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Component**: ${{ steps.params.outputs.component }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version**: v${{ steps.params.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Review and merge the PR, then push to \`release/scratch\` to deploy." >> $GITHUB_STEP_SUMMARY
