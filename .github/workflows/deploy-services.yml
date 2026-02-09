@@ -1,0 +1,229 @@
+name: Deploy Services
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'scratch'
+        type: choice
+        options:
+          - scratch
+          - beta
+          - staging
+          - prod
+      services_version:
+        description: 'Services image version (default: latest)'
+        required: false
+        default: 'latest'
+        type: string
+      explorer_version:
+        description: 'Explorer image version (default: latest)'
+        required: false
+        default: 'latest'
+        type: string
+      reset_db:
+        description: 'Reset database and Redis'
+        required: false
+        default: false
+        type: boolean
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      services_version:
+        required: false
+        type: string
+        default: 'latest'
+      explorer_version:
+        required: false
+        type: string
+        default: 'latest'
+      reset_db:
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    name: Deploy Services Stack
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/hetzner
+          chmod 600 ~/.ssh/hetzner
+          cat >> ~/.ssh/config << EOF
+          Host services
+            HostName ${{ secrets.HETZNER_SERVICES_IP }}
+            User root
+            IdentityFile ~/.ssh/hetzner
+            StrictHostKeyChecking no
+          EOF
+
+      - name: Reset database and Redis
+        if: ${{ inputs.reset_db == true }}
+        run: |
+          echo "Flushing Postgres and Redis..."
+          ssh services << 'RESET_SCRIPT'
+          docker exec redis redis-cli FLUSHALL 2>/dev/null && echo "✓ Redis flushed" || echo "ℹ Redis not running"
+          
+          docker exec postgres psql -U ottochain -d ottochain -c "
+            DO \$\$
+            DECLARE
+              r RECORD;
+            BEGIN
+              FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                EXECUTE 'TRUNCATE TABLE \"' || r.tablename || '\" CASCADE';
+              END LOOP;
+            END \$\$;
+          " 2>/dev/null && echo "✓ Postgres tables truncated" || echo "ℹ Postgres not running"
+          RESET_SCRIPT
+
+      - name: Deploy services stack
+        run: |
+          METAGRAPH_IP="${{ secrets.HETZNER_NODE1_IP }}"
+          SERVICES_VERSION="${{ inputs.services_version || 'latest' }}"
+          EXPLORER_VERSION="${{ inputs.explorer_version || 'latest' }}"
+
+          # Write .env for docker compose
+          ssh services "cat > /opt/ottochain-services/.env" << SERVICES_ENV
+          # Version pinning
+          SERVICES_VERSION=${SERVICES_VERSION}
+          EXPLORER_VERSION=${EXPLORER_VERSION}
+
+          # Database
+          DATABASE_URL=postgresql://ottochain:${{ secrets.POSTGRES_PASSWORD }}@postgres:5432/ottochain
+          POSTGRES_USER=ottochain
+          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB=ottochain
+
+          # Metagraph endpoints
+          METAGRAPH_ML0_URL=http://${METAGRAPH_IP}:9200
+          METAGRAPH_DL1_URL=http://${METAGRAPH_IP}:9400
+          GL0_URL=http://${METAGRAPH_IP}:9000
+          GL1_URL=http://${METAGRAPH_IP}:9100
+          ML0_URL=http://${METAGRAPH_IP}:9200
+          CL1_URL=http://${METAGRAPH_IP}:9300
+          DL1_URL=http://${METAGRAPH_IP}:9400
+
+          # Alerting
+          TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_ALERT_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          SERVICES_ENV
+
+          ssh services << 'DEPLOY_SCRIPT'
+          cd /opt/ottochain-services
+          git pull origin main || true
+          
+          # Stop PM2 if running (migration from old setup)
+          pm2 stop all 2>/dev/null || true
+          pm2 delete all 2>/dev/null || true
+          
+          # Pull latest images and deploy stack
+          docker compose pull
+          docker compose up -d
+          
+          # Run database migrations
+          sleep 10
+          docker compose exec -T indexer npx prisma db push --accept-data-loss || true
+          
+          # Show status
+          docker compose ps
+          DEPLOY_SCRIPT
+
+      - name: Update nginx config
+        run: |
+          ssh services << 'NGINX_SCRIPT'
+          cat > /etc/nginx/sites-available/ottochain << 'NGINX_CONF'
+          server {
+              listen 8080;
+              server_name _;
+
+              location /graphql {
+                  proxy_pass http://127.0.0.1:4000/graphql;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection "upgrade";
+              }
+
+              location /api/ {
+                  proxy_pass http://127.0.0.1:3030/;
+              }
+
+              location /webhook/ {
+                  proxy_pass http://127.0.0.1:3031/;
+              }
+
+              location /monitor/ {
+                  proxy_pass http://127.0.0.1:3032/;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection "upgrade";
+                  proxy_set_header Host $host;
+              }
+
+              location / {
+                  proxy_pass http://127.0.0.1:8081;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+              }
+          }
+          NGINX_CONF
+          
+          ln -sf /etc/nginx/sites-available/ottochain /etc/nginx/sites-enabled/ottochain
+          nginx -t && nginx -s reload
+          NGINX_SCRIPT
+
+      - name: Health check
+        run: |
+          echo "Checking services health..."
+          sleep 5
+          
+          for service in gateway bridge indexer monitor; do
+            case $service in
+              gateway) port=4000 ;; bridge) port=3030 ;; indexer) port=3031 ;; monitor) port=3032 ;;
+            esac
+            status=$(ssh services "curl -sf -o /dev/null -w '%{http_code}' http://localhost:$port/health" || echo "000")
+            if [ "$status" = "200" ]; then
+              echo "✅ $service: healthy"
+            else
+              echo "⚠️ $service: HTTP $status"
+            fi
+          done
+          
+          # Check explorer
+          explorer=$(ssh services "curl -sf -o /dev/null -w '%{http_code}' http://localhost:8081" || echo "000")
+          if [ "$explorer" = "200" ]; then
+            echo "✅ explorer: healthy"
+          else
+            echo "⚠️ explorer: HTTP $explorer"
+          fi
+
+      - name: Summary
+        run: |
+          echo "## 🚀 Services Deployment Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Port | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|------|--------|" >> $GITHUB_STEP_SUMMARY
+          
+          for service in gateway bridge indexer monitor explorer; do
+            case $service in
+              gateway) port=4000 ;; bridge) port=3030 ;; indexer) port=3031 ;; monitor) port=3032 ;; explorer) port=8081 ;;
+            esac
+            status=$(ssh services "curl -sf -o /dev/null -w '%{http_code}' http://localhost:$port/health 2>/dev/null || curl -sf -o /dev/null -w '%{http_code}' http://localhost:$port" || echo "000")
+            ICON="✅"; [ "$status" != "200" ] && ICON="⚠️"
+            echo "| $ICON $service | $port | HTTP $status |" >> $GITHUB_STEP_SUMMARY
+          done
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Services Version**: \`${{ inputs.services_version || 'latest' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Explorer Version**: \`${{ inputs.explorer_version || 'latest' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Explorer**: http://${{ secrets.HETZNER_SERVICES_IP }}:8080" >> $GITHUB_STEP_SUMMARY
