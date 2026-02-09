@@ -754,3 +754,45 @@ jobs:
           echo "**GL0 Peer ID**: \`${{ needs.deploy.outputs.gl0_peer_id }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Token ID**: \`${{ needs.deploy.outputs.token_id }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Explorer**: http://${{ secrets.HETZNER_SERVICES_IP }}:8080" >> $GITHUB_STEP_SUMMARY
+
+  # ============================================
+  # COMPATIBILITY: Update compatibility matrix
+  # ============================================
+  compatibility:
+    name: Update Compatibility
+    runs-on: ubuntu-latest
+    needs: [services]
+    if: success()
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Generate compatibility matrix
+        run: |
+          chmod +x scripts/generate-compatibility.sh
+          ./scripts/generate-compatibility.sh
+
+      - name: Update deployed versions
+        run: |
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          yq -i '.deployed.scratch.ottochain = .components.ottochain.version' versions.yml
+          yq -i '.deployed.scratch.services = .components.services.version' versions.yml
+          yq -i '.deployed.scratch.explorer = .components.explorer.version' versions.yml
+          yq -i ".deployed.scratch.timestamp = \"$TIMESTAMP\"" versions.yml
+          yq -i ".deployed.scratch.workflow_run = \"${{ github.run_id }}\"" versions.yml
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add COMPATIBILITY.md versions.yml
+          git diff --staged --quiet || git commit -m "chore: update compatibility matrix [skip ci]"
+          git push
