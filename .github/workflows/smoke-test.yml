@@ -17,6 +17,11 @@ on:
         required: false
         default: '60'
         type: string
+      skip_ui:
+        description: 'Skip UI tests (faster)'
+        required: false
+        default: false
+        type: boolean
   
   # Can be called after deploy
   workflow_call:
@@ -28,14 +33,21 @@ on:
         required: false
         default: '60'
         type: string
+      skip_ui:
+        required: false
+        default: false
+        type: boolean
     outputs:
       passed:
         description: 'Whether smoke tests passed'
-        value: ${{ jobs.smoke.outputs.passed }}
+        value: ${{ jobs.results.outputs.passed }}
 
 jobs:
-  smoke:
-    name: Run Smoke Tests
+  # ==========================================================================
+  # API Smoke Tests
+  # ==========================================================================
+  api-tests:
+    name: API Smoke Tests
     runs-on: ubuntu-latest
     outputs:
       passed: ${{ steps.test.outputs.passed }}
@@ -48,26 +60,19 @@ jobs:
         id: config
         run: |
           ENV="${{ inputs.environment }}"
-          
-          # Environment-specific URLs (expand as needed)
           case "$ENV" in
             scratch)
               echo "services_url=http://5.78.121.248:3030" >> $GITHUB_OUTPUT
               echo "explorer_url=http://5.78.121.248:8080" >> $GITHUB_OUTPUT
               echo "ml0_url=http://5.78.90.207:9200" >> $GITHUB_OUTPUT
               ;;
-            # beta)
-            #   echo "services_url=http://TBD:3030" >> $GITHUB_OUTPUT
-            #   echo "explorer_url=http://TBD:8080" >> $GITHUB_OUTPUT
-            #   echo "ml0_url=http://TBD:9200" >> $GITHUB_OUTPUT
-            #   ;;
             *)
               echo "Unknown environment: $ENV"
               exit 1
               ;;
           esac
 
-      - name: Run smoke tests
+      - name: Run API smoke tests
         id: test
         env:
           SERVICES_URL: ${{ steps.config.outputs.services_url }}
@@ -83,10 +88,112 @@ jobs:
             exit 1
           fi
 
+  # ==========================================================================
+  # UI Smoke Tests (Playwright)
+  # ==========================================================================
+  ui-tests:
+    name: UI Smoke Tests
+    runs-on: ubuntu-latest
+    if: ${{ inputs.skip_ui != true }}
+    outputs:
+      passed: ${{ steps.test.outputs.passed }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Playwright
+        run: |
+          npm init -y
+          npm install playwright
+          npx playwright install chromium --with-deps
+
+      - name: Load environment config
+        id: config
+        run: |
+          ENV="${{ inputs.environment }}"
+          case "$ENV" in
+            scratch)
+              echo "explorer_url=http://5.78.121.248:8080" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "explorer_url=http://localhost:8080" >> $GITHUB_OUTPUT
+              ;;
+          esac
+
+      - name: Run UI verification
+        id: test
+        env:
+          EXPLORER_URL: ${{ steps.config.outputs.explorer_url }}
+          SCREENSHOT_DIR: ./screenshots
+        run: |
+          if node scripts/verify-explorer-ui.js; then
+            echo "passed=true" >> $GITHUB_OUTPUT
+          else
+            echo "passed=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: explorer-screenshots
+          path: screenshots/
+          retention-days: 7
+
+  # ==========================================================================
+  # Aggregate Results
+  # ==========================================================================
+  results:
+    name: Smoke Test Results
+    runs-on: ubuntu-latest
+    needs: [api-tests, ui-tests]
+    if: always()
+    outputs:
+      passed: ${{ steps.check.outputs.passed }}
+    
+    steps:
+      - name: Check results
+        id: check
+        run: |
+          API_PASSED="${{ needs.api-tests.outputs.passed }}"
+          UI_PASSED="${{ needs.ui-tests.outputs.passed }}"
+          UI_SKIPPED="${{ needs.ui-tests.result == 'skipped' }}"
+          
+          echo "API tests: $API_PASSED"
+          echo "UI tests: $UI_PASSED (skipped: $UI_SKIPPED)"
+          
+          if [ "$API_PASSED" = "true" ]; then
+            if [ "$UI_SKIPPED" = "true" ] || [ "$UI_PASSED" = "true" ]; then
+              echo "passed=true" >> $GITHUB_OUTPUT
+              echo "✅ All smoke tests passed!"
+            else
+              echo "passed=false" >> $GITHUB_OUTPUT
+              echo "❌ UI tests failed"
+              exit 1
+            fi
+          else
+            echo "passed=false" >> $GITHUB_OUTPUT
+            echo "❌ API tests failed"
+            exit 1
+          fi
+
       - name: Summary
         if: always()
         run: |
           echo "## 🔥 Smoke Test Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Status**: ${{ steps.test.outputs.passed == 'true' && '✅ PASSED' || '❌ FAILED' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Test Suite | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| API Tests | ${{ needs.api-tests.outputs.passed == 'true' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| UI Tests | ${{ needs.ui-tests.result == 'skipped' && '⏭️ Skipped' || (needs.ui-tests.outputs.passed == 'true' && '✅ Passed' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Overall**: ${{ steps.check.outputs.passed == 'true' && '✅ PASSED' || '❌ FAILED' }}" >> $GITHUB_STEP_SUMMARY
