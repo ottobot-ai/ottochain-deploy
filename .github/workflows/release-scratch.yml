@@ -644,6 +644,72 @@ jobs:
           pm2 list
           BUILD_SCRIPT
 
+      - name: Deploy explorer
+        run: |
+          SERVICES_IP="${{ secrets.HETZNER_SERVICES_IP }}"
+          ssh services << EXPLORER_SCRIPT
+          cd /opt/ottochain-explorer
+          git pull origin main || true
+          
+          # Build with correct API URLs baked in (relative paths work since nginx proxies)
+          docker build \
+            --build-arg VITE_API_URL=/api \
+            --build-arg VITE_WS_URL=ws://${SERVICES_IP}:8080/graphql \
+            --build-arg VITE_BRIDGE_URL=/api \
+            -t ottochain-explorer:latest .
+          
+          # Stop old container and start new one
+          docker stop explorer 2>/dev/null || true
+          docker rm explorer 2>/dev/null || true
+          docker run -d --name explorer \
+            --restart unless-stopped \
+            -p 127.0.0.1:8081:80 \
+            ottochain-explorer:latest
+          
+          # Update nginx to proxy to explorer container (idempotent)
+          cat > /etc/nginx/sites-available/ottochain << 'NGINX_CONF'
+          server {
+              listen 8080;
+              server_name _;
+
+              location /graphql {
+                  proxy_pass http://127.0.0.1:4000/graphql;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade \$http_upgrade;
+                  proxy_set_header Connection "upgrade";
+              }
+
+              location /api/ {
+                  proxy_pass http://127.0.0.1:3030/;
+              }
+
+              location /webhook/ {
+                  proxy_pass http://127.0.0.1:3031/;
+              }
+
+              location /monitor/ {
+                  proxy_pass http://127.0.0.1:3032/;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade \$http_upgrade;
+                  proxy_set_header Connection "upgrade";
+                  proxy_set_header Host \$host;
+              }
+
+              location / {
+                  proxy_pass http://127.0.0.1:8081;
+                  proxy_set_header Host \$host;
+                  proxy_set_header X-Real-IP \$remote_addr;
+              }
+          }
+          NGINX_CONF
+          
+          ln -sf /etc/nginx/sites-available/ottochain /etc/nginx/sites-enabled/ottochain
+          nginx -t && nginx -s reload
+          
+          echo "Explorer container started, nginx updated"
+          docker ps | grep explorer
+          EXPLORER_SCRIPT
+
   # ============================================
   # HEALTH CHECK: Verify all layers are up
   # ============================================
@@ -781,7 +847,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.target.outputs.branch }}
-          token: ${{ secrets.GH_PAT }}
 
       - name: Install yq
         run: |
