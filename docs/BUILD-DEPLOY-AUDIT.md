@@ -14,11 +14,25 @@ The ecosystem has a solid Docker-based deploy system with version management via
 
 | Repo | Purpose | Artifacts | Release Flow |
 |------|---------|-----------|--------------|
-| `scasplte2/ottochain` | Metagraph Scala code | JARs (built on deploy) | ❌ No releases |
+| `scasplte2/ottochain` | Metagraph Scala code | Docker image (all 5 layers) | ✅ `ghcr.io/ottobot-ai/ottochain-metagraph` (PR #39) |
 | `ottobot-ai/ottochain-sdk` | TypeScript SDK | npm package | ✅ `v0.2.0` |
 | `ottobot-ai/ottochain-services` | Bridge/Indexer | Docker image | ✅ `v0.2.0` |
 | `ottobot-ai/ottochain-explorer` | Web UI | Docker image | ✅ `v0.1.0` |
-| `ottobot-ai/ottochain-deploy` | Deploy configs | Workflows | N/A |
+| `ottobot-ai/ottochain-deploy` | Deploy configs | Workflows | Pure Docker (PR #21) |
+
+### Docker-First Architecture (NEW)
+
+**PR #39 (ottochain)** + **PR #21 (deploy)** introduce a Docker-first approach:
+
+1. **Single metagraph image** (`ghcr.io/ottobot-ai/ottochain-metagraph`) contains all 5 layers:
+   - GL0, GL1 (Tessellation)
+   - ML0, CL1, DL1 (OttoChain)
+   
+2. **Layer selection via env var**: `LAYER=ml0` determines which JAR runs
+
+3. **No build on deploy**: Workflows pull pre-built images instead of compiling JARs
+
+4. **Version lock**: Tessellation + OttoChain versions baked together = guaranteed compatibility
 
 ### Version Management
 
@@ -153,22 +167,17 @@ yq '.deployed.scratch' versions.yml
 
 ## Identified Gaps
 
+### ✅ Recently Solved
+
+1. **Metagraph releases** — SOLVED by PR #39 + PR #21
+   - Multi-stage Dockerfile builds all 5 layers into single image
+   - Pushed to `ghcr.io/ottobot-ai/ottochain-metagraph`
+   - Deploy workflows pull image instead of building JARs
+   - Rollback = deploy previous image tag
+
 ### 🔴 Critical
 
-1. **No metagraph releases**
-   - JARs built fresh on every deploy from branch
-   - No artifact caching or versioned JARs
-   - Can't easily rollback to previous metagraph version
-   
-   **Recommendation**: Add release workflow to `scasplte2/ottochain`:
-   ```yaml
-   # On tag push:
-   # 1. Build JARs
-   # 2. Upload to GitHub Release as assets
-   # 3. deploy-metagraph.yml downloads from release instead of building
-   ```
-
-2. **No automated version bump PRs**
+1. **No automated version bump PRs**
    - When services releases v0.3.0, someone must manually update versions.yml
    - Easy to forget, leads to drift
    
