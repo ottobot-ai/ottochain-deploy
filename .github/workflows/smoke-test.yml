@@ -1,0 +1,92 @@
+name: Smoke Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to test'
+        required: true
+        default: 'scratch'
+        type: choice
+        options:
+          - scratch
+          # - beta    # TODO: Add when beta environment ready
+          # - staging # TODO: Add when staging environment ready
+      traffic_duration:
+        description: 'Traffic generation duration (seconds)'
+        required: false
+        default: '60'
+        type: string
+  
+  # Can be called after deploy
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      traffic_duration:
+        required: false
+        default: '60'
+        type: string
+    outputs:
+      passed:
+        description: 'Whether smoke tests passed'
+        value: ${{ jobs.smoke.outputs.passed }}
+
+jobs:
+  smoke:
+    name: Run Smoke Tests
+    runs-on: ubuntu-latest
+    outputs:
+      passed: ${{ steps.test.outputs.passed }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Load environment config
+        id: config
+        run: |
+          ENV="${{ inputs.environment }}"
+          
+          # Environment-specific URLs (expand as needed)
+          case "$ENV" in
+            scratch)
+              echo "services_url=http://5.78.121.248:3030" >> $GITHUB_OUTPUT
+              echo "explorer_url=http://5.78.121.248:8080" >> $GITHUB_OUTPUT
+              echo "ml0_url=http://5.78.90.207:9200" >> $GITHUB_OUTPUT
+              ;;
+            # beta)
+            #   echo "services_url=http://TBD:3030" >> $GITHUB_OUTPUT
+            #   echo "explorer_url=http://TBD:8080" >> $GITHUB_OUTPUT
+            #   echo "ml0_url=http://TBD:9200" >> $GITHUB_OUTPUT
+            #   ;;
+            *)
+              echo "Unknown environment: $ENV"
+              exit 1
+              ;;
+          esac
+
+      - name: Run smoke tests
+        id: test
+        env:
+          SERVICES_URL: ${{ steps.config.outputs.services_url }}
+          EXPLORER_URL: ${{ steps.config.outputs.explorer_url }}
+          ML0_URL: ${{ steps.config.outputs.ml0_url }}
+          TRAFFIC_DURATION: ${{ inputs.traffic_duration }}
+        run: |
+          chmod +x scripts/smoke-test.sh
+          if ./scripts/smoke-test.sh; then
+            echo "passed=true" >> $GITHUB_OUTPUT
+          else
+            echo "passed=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## 🔥 Smoke Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status**: ${{ steps.test.outputs.passed == 'true' && '✅ PASSED' || '❌ FAILED' }}" >> $GITHUB_STEP_SUMMARY
