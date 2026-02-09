@@ -1,0 +1,192 @@
+name: Deploy Monitoring
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'scratch'
+        type: choice
+        options:
+          - scratch
+          - beta
+          - staging
+          - prod
+      include_exporters:
+        description: 'Include node exporters on metagraph nodes'
+        required: false
+        default: true
+        type: boolean
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      include_exporters:
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  deploy:
+    name: Deploy Monitoring Stack
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout ottochain-monitoring
+        uses: actions/checkout@v4
+        with:
+          repository: ottobot-ai/ottochain-monitoring
+          path: monitoring
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/hetzner
+          chmod 600 ~/.ssh/hetzner
+
+          for host in node1 node2 node3 services; do
+            case $host in
+              node1) ip="${{ secrets.HETZNER_NODE1_IP }}" ;;
+              node2) ip="${{ secrets.HETZNER_NODE2_IP }}" ;;
+              node3) ip="${{ secrets.HETZNER_NODE3_IP }}" ;;
+              services) ip="${{ secrets.HETZNER_SERVICES_IP }}" ;;
+            esac
+            cat >> ~/.ssh/config << EOF
+          Host $host
+            HostName $ip
+            User root
+            IdentityFile ~/.ssh/hetzner
+            StrictHostKeyChecking no
+          EOF
+          done
+
+      - name: Deploy monitoring stack to services node
+        run: |
+          NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
+          NODE2_IP="${{ secrets.HETZNER_NODE2_IP }}"
+          NODE3_IP="${{ secrets.HETZNER_NODE3_IP }}"
+          SERVICES_IP="${{ secrets.HETZNER_SERVICES_IP }}"
+
+          # Copy monitoring config to services node
+          ssh services "mkdir -p /opt/ottochain-monitoring"
+          scp -r monitoring/* services:/opt/ottochain-monitoring/
+
+          # Generate prometheus targets config
+          ssh services "cat > /opt/ottochain-monitoring/prometheus/targets.yml" << TARGETS
+          # Auto-generated targets for OttoChain cluster
+          - targets:
+              - ${NODE1_IP}:9100
+              - ${NODE2_IP}:9100
+              - ${NODE3_IP}:9100
+            labels:
+              job: node-exporter
+              cluster: metagraph
+
+          - targets:
+              - ${NODE1_IP}:9000
+              - ${NODE1_IP}:9100
+              - ${NODE1_IP}:9200
+              - ${NODE1_IP}:9300
+              - ${NODE1_IP}:9400
+            labels:
+              job: tessellation
+              node: node1
+
+          - targets:
+              - ${NODE2_IP}:9000
+              - ${NODE2_IP}:9100
+              - ${NODE2_IP}:9200
+              - ${NODE2_IP}:9300
+              - ${NODE2_IP}:9400
+            labels:
+              job: tessellation
+              node: node2
+
+          - targets:
+              - ${NODE3_IP}:9000
+              - ${NODE3_IP}:9100
+              - ${NODE3_IP}:9200
+              - ${NODE3_IP}:9300
+              - ${NODE3_IP}:9400
+            labels:
+              job: tessellation
+              node: node3
+
+          - targets:
+              - localhost:4000
+              - localhost:3030
+              - localhost:3031
+              - localhost:3032
+            labels:
+              job: services
+          TARGETS
+
+          # Write .env
+          ssh services "cat > /opt/ottochain-monitoring/.env" << ENV
+          GRAFANA_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_ALERT_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          ENV
+
+          # Deploy stack
+          ssh services << 'DEPLOY'
+          cd /opt/ottochain-monitoring
+          docker compose pull
+          docker compose up -d
+          docker compose ps
+          DEPLOY
+
+      - name: Deploy node exporters
+        if: ${{ inputs.include_exporters == true }}
+        run: |
+          for host in node1 node2 node3; do
+            ssh $host << 'EXPORTER'
+            # Install node_exporter if not present
+            if ! docker ps | grep -q node-exporter; then
+              docker run -d --name node-exporter \
+                --restart unless-stopped \
+                -p 9100:9100 \
+                -v /proc:/host/proc:ro \
+                -v /sys:/host/sys:ro \
+                -v /:/rootfs:ro \
+                prom/node-exporter:latest \
+                --path.procfs=/host/proc \
+                --path.sysfs=/host/sys \
+                --path.rootfs=/rootfs
+              echo "✓ Node exporter installed"
+            else
+              echo "ℹ Node exporter already running"
+            fi
+            EXPORTER
+          done
+
+      - name: Health check
+        run: |
+          echo "Checking monitoring stack..."
+          sleep 10
+          
+          # Prometheus
+          prom=$(ssh services "curl -sf -o /dev/null -w '%{http_code}' http://localhost:9090/-/healthy" || echo "000")
+          echo "Prometheus: HTTP $prom"
+          
+          # Grafana
+          grafana=$(ssh services "curl -sf -o /dev/null -w '%{http_code}' http://localhost:3001/api/health" || echo "000")
+          echo "Grafana: HTTP $grafana"
+          
+          # Alertmanager
+          alertmgr=$(ssh services "curl -sf -o /dev/null -w '%{http_code}' http://localhost:9093/-/healthy" || echo "000")
+          echo "Alertmanager: HTTP $alertmgr"
+
+      - name: Summary
+        run: |
+          echo "## 📊 Monitoring Deployment Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Port | URL |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|------|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| Prometheus | 9090 | http://${{ secrets.HETZNER_SERVICES_IP }}:9090 |" >> $GITHUB_STEP_SUMMARY
+          echo "| Grafana | 3001 | http://${{ secrets.HETZNER_SERVICES_IP }}:3001 |" >> $GITHUB_STEP_SUMMARY
+          echo "| Alertmanager | 9093 | http://${{ secrets.HETZNER_SERVICES_IP }}:9093 |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Node Exporters**: ${{ inputs.include_exporters && 'Deployed' || 'Skipped' }}" >> $GITHUB_STEP_SUMMARY
