@@ -84,7 +84,7 @@ jobs:
     with:
       environment: ${{ needs.setup.outputs.environment }}
       wipe_state: ${{ inputs.wipe_state == true }}
-      metagraph_version: ${{ inputs.metagraph_version || 'main' }}
+      image_tag: ${{ inputs.metagraph_version || 'latest' }}
     secrets: inherit
 
   # Deploy services (docker compose stack)
