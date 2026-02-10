@@ -1,0 +1,73 @@
+name: Deploy on Version Change
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'versions.yaml'
+
+jobs:
+  check-auto-deploy:
+    name: Check Auto-Deploy Settings
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+      environment: ${{ steps.check.outputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup yq
+        uses: mikefarah/yq@v4
+      
+      - name: Check auto-deploy settings
+        id: check
+        run: |
+          # Check which environments have auto_deploy enabled
+          SCRATCH_AUTO=$(yq '.environments.scratch.auto_deploy // false' versions.yaml)
+          STAGING_AUTO=$(yq '.environments.staging.auto_deploy // false' versions.yaml)
+          
+          if [ "$SCRATCH_AUTO" = "true" ]; then
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "environment=scratch" >> $GITHUB_OUTPUT
+            echo "🚀 Auto-deploy enabled for scratch"
+          elif [ "$STAGING_AUTO" = "true" ]; then
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "environment=staging" >> $GITHUB_OUTPUT
+            echo "🚀 Auto-deploy enabled for staging"
+          else
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+            echo "environment=" >> $GITHUB_OUTPUT
+            echo "ℹ️ No auto-deploy environments configured"
+          fi
+
+  deploy-scratch:
+    name: Deploy to Scratch
+    needs: check-auto-deploy
+    if: needs.check-auto-deploy.outputs.should_deploy == 'true'
+    uses: ./.github/workflows/deploy-metagraph.yml
+    with:
+      environment: ${{ needs.check-auto-deploy.outputs.environment }}
+    secrets: inherit
+
+  notify:
+    name: Notify
+    needs: [check-auto-deploy, deploy-scratch]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summary
+        run: |
+          echo "## 🚀 Auto-Deploy Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.check-auto-deploy.outputs.should_deploy }}" = "true" ]; then
+            echo "**Environment**: ${{ needs.check-auto-deploy.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+            
+            if [ "${{ needs.deploy-scratch.result }}" = "success" ]; then
+              echo "**Status**: ✅ Deployed successfully" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "**Status**: ❌ Deployment failed" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "No auto-deploy configured. Manual deployment required." >> $GITHUB_STEP_SUMMARY
+          fi
