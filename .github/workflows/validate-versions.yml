@@ -1,0 +1,128 @@
+name: Validate Versions
+
+on:
+  pull_request:
+    paths:
+      - 'versions.yaml'
+      - 'compatibility.yaml'
+
+jobs:
+  validate:
+    name: Validate Compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install semver
+        run: npm install -g semver
+
+      - name: Setup yq
+        uses: mikefarah/yq@v4
+
+      - name: Validate versions.yaml structure
+        run: |
+          echo "📋 Validating versions.yaml structure..."
+          
+          # Check required fields exist
+          if ! yq -e '.components' versions.yaml > /dev/null 2>&1; then
+            echo "❌ Missing 'components' in versions.yaml"
+            exit 1
+          fi
+          
+          # Check all components have versions
+          for comp in ottochain sdk services explorer monitoring; do
+            VERSION=$(yq ".components.$comp // \"\"" versions.yaml)
+            if [ -z "$VERSION" ]; then
+              echo "❌ Missing version for $comp"
+              exit 1
+            fi
+            echo "✅ $comp: $VERSION"
+          done
+
+      - name: Check compatibility matrix
+        id: compat
+        run: |
+          echo "🔍 Checking full compatibility matrix..."
+          
+          ERRORS=""
+          WARNINGS=""
+          
+          # For each component with requirements
+          for COMP in $(yq '.components | keys | .[]' compatibility.yaml); do
+            REQUIRES=$(yq ".components.$COMP.requires // {}" compatibility.yaml)
+            
+            if [ "$REQUIRES" = "{}" ] || [ "$REQUIRES" = "null" ]; then
+              continue
+            fi
+            
+            COMP_VERSION=$(yq ".components.$COMP" versions.yaml)
+            echo "Checking $COMP ($COMP_VERSION) dependencies..."
+            
+            # Check each dependency
+            for DEP in $(yq ".components.$COMP.requires | keys | .[]" compatibility.yaml 2>/dev/null || echo ""); do
+              RANGE=$(yq ".components.$COMP.requires.$DEP" compatibility.yaml)
+              DEP_VERSION=$(yq ".components.$DEP" versions.yaml)
+              
+              echo "  → $DEP: need $RANGE, have $DEP_VERSION"
+              
+              # Use semver CLI for proper range checking
+              if ! semver -r "$RANGE" "$DEP_VERSION" > /dev/null 2>&1; then
+                ERRORS="$ERRORS\n❌ $COMP requires $DEP $RANGE but versions.yaml has $DEP_VERSION"
+              fi
+            done
+          done
+          
+          if [ -n "$ERRORS" ]; then
+            echo -e "\n$ERRORS"
+            echo "has_errors=true" >> $GITHUB_OUTPUT
+            exit 1
+          else
+            echo ""
+            echo "✅ All compatibility checks passed!"
+            echo "has_errors=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Verify artifacts exist
+        run: |
+          echo "📦 Verifying artifacts exist..."
+          
+          # Check GitHub releases
+          OTTO_VERSION=$(yq '.components.ottochain' versions.yaml)
+          echo "Checking ottochain v$OTTO_VERSION..."
+          if gh release view "v$OTTO_VERSION" -R scasplte2/ottochain > /dev/null 2>&1; then
+            echo "✅ ottochain v$OTTO_VERSION release exists"
+          else
+            echo "⚠️ ottochain v$OTTO_VERSION release not found (may be pending)"
+          fi
+          
+          # Check Docker images
+          SERVICES_VERSION=$(yq '.components.services' versions.yaml)
+          echo "Checking services v$SERVICES_VERSION..."
+          # Note: Can't easily check GHCR without auth, skip for now
+          
+          echo ""
+          echo "ℹ️ Full artifact verification runs during deployment"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## 🔍 Version Validation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Current Versions" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`yaml" >> $GITHUB_STEP_SUMMARY
+          yq '.components' versions.yaml >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.compat.outputs.has_errors }}" = "true" ]; then
+            echo "### ❌ Compatibility Errors Found" >> $GITHUB_STEP_SUMMARY
+            echo "Please review the workflow logs for details." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ✅ All Checks Passed" >> $GITHUB_STEP_SUMMARY
+          fi

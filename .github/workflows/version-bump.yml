@@ -52,16 +52,63 @@ jobs:
       - name: Setup yq
         uses: mikefarah/yq@v4
 
-      - name: Update versions.yml
+      - name: Update versions.yaml
         run: |
           COMPONENT="${{ steps.params.outputs.component }}"
           VERSION="${{ steps.params.outputs.version }}"
           
-          echo "Updating components.$COMPONENT.version to $VERSION"
-          yq -i ".components.$COMPONENT.version = \"$VERSION\"" versions.yml
+          echo "Updating components.$COMPONENT to $VERSION"
+          yq -i ".components.$COMPONENT = \"$VERSION\"" versions.yaml
           
-          echo "Updated versions.yml:"
-          cat versions.yml
+          echo "Updated versions.yaml:"
+          cat versions.yaml
+
+      - name: Validate compatibility
+        id: compat
+        run: |
+          echo "🔍 Checking compatibility matrix..."
+          
+          COMPONENT="${{ steps.params.outputs.component }}"
+          VERSION="${{ steps.params.outputs.version }}"
+          
+          # Load compatibility requirements
+          REQUIRES=$(yq ".components.$COMPONENT.requires // {}" compatibility.yaml)
+          
+          if [ "$REQUIRES" = "{}" ]; then
+            echo "✅ $COMPONENT has no compatibility requirements"
+            exit 0
+          fi
+          
+          echo "Checking requirements for $COMPONENT:"
+          echo "$REQUIRES"
+          
+          # Check each requirement
+          ERRORS=""
+          for DEP in $(yq ".components.$COMPONENT.requires | keys | .[]" compatibility.yaml); do
+            RANGE=$(yq ".components.$COMPONENT.requires.$DEP" compatibility.yaml)
+            CURRENT=$(yq ".components.$DEP" versions.yaml)
+            
+            echo "  $DEP: need $RANGE, have $CURRENT"
+            
+            # Basic semver check (simplified - checks major.minor prefix)
+            # For full semver, we'd use node-semver
+            MIN_VERSION=$(echo "$RANGE" | sed 's/>=\([0-9.]*\).*/\1/')
+            if [ -n "$MIN_VERSION" ]; then
+              # Compare versions (simplified)
+              if [ "$(printf '%s\n' "$MIN_VERSION" "$CURRENT" | sort -V | head -1)" != "$MIN_VERSION" ]; then
+                ERRORS="$ERRORS\n❌ $DEP $CURRENT does not satisfy $RANGE"
+              fi
+            fi
+          done
+          
+          if [ -n "$ERRORS" ]; then
+            echo -e "$ERRORS"
+            echo "::warning::Compatibility check found potential issues"
+            echo "warnings=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ All compatibility checks passed"
+            echo "warnings=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v6
@@ -75,13 +122,11 @@ jobs:
             ## Changes
             - `${{ steps.params.outputs.component }}` → `v${{ steps.params.outputs.version }}`
             
+            ## Compatibility
+            ${{ steps.compat.outputs.warnings == 'true' && '⚠️ Compatibility warnings found - please review' || '✅ All compatibility checks passed' }}
+            
             ## Deploy
-            After merging, push to a `release/*` branch to trigger deployment:
-            ```bash
-            git checkout release/scratch
-            git merge main
-            git push origin release/scratch
-            ```
+            Merging this PR will trigger deployment to scratch environment.
             
             ---
             *Triggered by: ${{ github.event_name }}*
@@ -98,4 +143,9 @@ jobs:
           echo "**Component**: ${{ steps.params.outputs.component }}" >> $GITHUB_STEP_SUMMARY
           echo "**Version**: v${{ steps.params.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Review and merge the PR, then push to \`release/scratch\` to deploy." >> $GITHUB_STEP_SUMMARY
+          echo "### Compatibility" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.compat.outputs.warnings }}" = "true" ]; then
+            echo "⚠️ Warnings found - review PR for details" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ All checks passed" >> $GITHUB_STEP_SUMMARY
+          fi

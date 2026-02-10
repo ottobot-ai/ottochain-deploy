@@ -1,0 +1,58 @@
+# OttoChain Component Compatibility Matrix
+# Defines which versions of components work together.
+# Used by CI to validate version combinations before deployment.
+
+components:
+  ottochain:
+    description: "Core metagraph (Scala)"
+    type: core
+    artifacts:
+      - ghcr.io/scasplte2/ottochain-metagraph
+      - github.com/scasplte2/ottochain/releases (JARs)
+
+  sdk:
+    description: "TypeScript SDK (@ottochain/sdk)"
+    type: client
+    artifacts:
+      - npmjs.com/@ottochain/sdk
+      - npm.pkg.github.com/@ottochain/sdk
+    requires:
+      # SDK must be compatible with core's data types and API
+      ottochain: ">=0.5.0 <1.0.0"
+
+  services:
+    description: "Backend services (bridge, indexer, API)"
+    type: backend
+    artifacts:
+      - ghcr.io/ottobot-ai/ottochain-bridge
+      - ghcr.io/ottobot-ai/ottochain-indexer
+    requires:
+      # Services use SDK for chain interaction
+      sdk: ">=0.2.0"
+      # Services must understand core's snapshot format
+      ottochain: ">=0.5.0 <1.0.0"
+
+  explorer:
+    description: "Explorer web UI"
+    type: frontend
+    artifacts:
+      - ghcr.io/ottobot-ai/ottochain-explorer
+    requires:
+      # Explorer talks to services API
+      services: ">=0.1.0"
+
+  monitoring:
+    description: "Monitoring stack (Grafana dashboards, alerts)"
+    type: tooling
+    artifacts:
+      - github.com/ottobot-ai/ottochain-monitoring
+    requires: {}  # Standalone, no strict dependencies
+
+# Compatibility rules are semver ranges
+# ">=0.5.0 <1.0.0" means any 0.5.x, 0.6.x, ..., 0.9.x
+# This allows minor/patch updates without breaking compatibility
+
+# Breaking changes policy:
+# - Core major bump (0.x → 1.0): All components need compatibility review
+# - Core minor bump (0.5 → 0.6): SDK/services should still work
+# - Core patch bump (0.5.0 → 0.5.1): Always compatible
