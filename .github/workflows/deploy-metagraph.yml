@@ -98,22 +98,46 @@ jobs:
           done
           wait
 
-      - name: Verify keys exist on all nodes
+      - name: Setup and verify keys on all nodes
         run: |
-          echo "=== Verifying L1 consensus keys ==="
+          echo "=== Setting up L1 consensus keys ==="
           # L1 nodes need DIFFERENT keys for consensus - same key = same peer ID = no consensus
+          # Node1 stores the master keys (key.p12, key2.p12, key3.p12)
+          # Node2 uses keys2/key.p12, Node3 uses keys3/key.p12
           
-          # node1 uses /opt/ottochain/keys (default)
-          ssh node1 'test -f /opt/ottochain/keys/key.p12 || (echo "ERROR: keys/key.p12 not found on node1"; exit 1)'
-          echo "✓ node1: /opt/ottochain/keys/key.p12 exists"
+          # Verify node1 has the source keys
+          ssh node1 'test -f /opt/ottochain/keys/key.p12 || (echo "ERROR: key.p12 not found on node1"; exit 1)'
+          echo "✓ node1: source key.p12 exists"
           
-          # node2 uses /opt/ottochain/keys2
-          ssh node2 'test -f /opt/ottochain/keys2/key.p12 || (echo "ERROR: keys2/key.p12 not found on node2"; exit 1)'
-          echo "✓ node2: /opt/ottochain/keys2/key.p12 exists"
+          # Distribute key2.p12 to node2 if missing
+          if ! ssh node2 'test -f /opt/ottochain/keys2/key.p12' 2>/dev/null; then
+            echo "Distributing key2 to node2..."
+            ssh node2 'mkdir -p /opt/ottochain/keys2'
+            if ssh node1 'test -f /opt/ottochain/keys/key2.p12'; then
+              ssh node1 'cat /opt/ottochain/keys/key2.p12' | ssh node2 'cat > /opt/ottochain/keys2/key.p12 && chmod 644 /opt/ottochain/keys2/key.p12'
+              echo "✓ Copied key2.p12 from node1 to node2/keys2/"
+            else
+              echo "ERROR: key2.p12 not found on node1 - cannot setup node2"
+              exit 1
+            fi
+          else
+            echo "✓ node2: keys2/key.p12 already exists"
+          fi
           
-          # node3 uses /opt/ottochain/keys3
-          ssh node3 'test -f /opt/ottochain/keys3/key.p12 || (echo "ERROR: keys3/key.p12 not found on node3"; exit 1)'
-          echo "✓ node3: /opt/ottochain/keys3/key.p12 exists"
+          # Distribute key3.p12 to node3 if missing
+          if ! ssh node3 'test -f /opt/ottochain/keys3/key.p12' 2>/dev/null; then
+            echo "Distributing key3 to node3..."
+            ssh node3 'mkdir -p /opt/ottochain/keys3'
+            if ssh node1 'test -f /opt/ottochain/keys/key3.p12'; then
+              ssh node1 'cat /opt/ottochain/keys/key3.p12' | ssh node3 'cat > /opt/ottochain/keys3/key.p12 && chmod 644 /opt/ottochain/keys3/key.p12'
+              echo "✓ Copied key3.p12 from node1 to node3/keys3/"
+            else
+              echo "ERROR: key3.p12 not found on node1 - cannot setup node3"
+              exit 1
+            fi
+          else
+            echo "✓ node3: keys3/key.p12 already exists"
+          fi
           
           echo ""
           echo "All keys verified. L1 consensus should work."
