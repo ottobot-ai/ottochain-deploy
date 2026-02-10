@@ -445,8 +445,7 @@ jobs:
         if: ${{ inputs.include_exporters == true }}
         run: |
           for host in node1 node2 node3; do
-            ssh $host << 'EXPORTER'
-            if ! docker ps | grep -q node-exporter; then
+            ssh $host 'if ! docker ps | grep -q node-exporter; then
               docker run -d --name node-exporter \
                 --restart unless-stopped \
                 -p 9100:9100 \
@@ -460,8 +459,7 @@ jobs:
               echo "✓ Node exporter installed"
             else
               echo "ℹ Node exporter already running"
-            fi
-            EXPORTER
+            fi'
           done
 
       - name: Health check
