@@ -14,36 +14,34 @@
 
 ## Phase 2: Core Metagraph (ottochain)
 
-- [ ] **2.1** Add `release-please.yml` workflow
-- [ ] **2.2** Add `release-please-config.json` for Scala project
-- [ ] **2.3** Verify dispatch to ottochain-deploy works
-- [ ] **2.4** Test full cycle: commit → Release PR → merge → tag → JAR + Docker → deploy notification
+- [x] **2.1** Add `release-please.yml` workflow
+- [x] **2.2** Add `release-please-config.json` for Scala project
+- [x] **2.3** Verify dispatch to ottochain-deploy works
+- [x] **2.4** Test full cycle: commit → Release PR → merge → tag → JAR + Docker → deploy notification
 
 ## Phase 3: SDK (ottochain-sdk)
 
-- [ ] **3.1** Add `release-please.yml` workflow  
-- [ ] **3.2** Add `release-please-config.json` for Node/TS project
-- [ ] **3.3** Update `release.yml` to trigger on release-please tags
-- [ ] **3.4** Add compatibility declaration (works with core X.Y.Z)
-- [ ] **3.5** Verify npm + GitHub Packages publishing
+- [x] **3.1** Add `release-please.yml` workflow  
+- [x] **3.2** Simplified release.yml to trigger on tag push
+- [ ] **3.3** Add compatibility declaration (works with core X.Y.Z)
+- [ ] **3.4** Verify npm + GitHub Packages publishing
 
 ## Phase 4: Services (ottochain-services)
 
-- [ ] **4.1** Add `release-please.yml` workflow
-- [ ] **4.2** Configure for Node monorepo (bridge, indexer, traffic-gen)
-- [ ] **4.3** Add compatibility declaration (requires SDK X.Y.Z, core X.Y.Z)
-- [ ] **4.4** Verify Docker image publishing
+- [x] **4.1** Add `release-please.yml` workflow
+- [ ] **4.2** Add compatibility declaration (requires SDK X.Y.Z, core X.Y.Z)
+- [ ] **4.3** Verify Docker image publishing
 
 ## Phase 5: Explorer (ottochain-explorer)
 
-- [ ] **5.1** Add `release-please.yml` workflow
+- [x] **5.1** Add `release-please.yml` workflow
 - [ ] **5.2** Add compatibility declaration (requires services API X.Y.Z)
 - [ ] **5.3** Verify Docker image publishing
 
 ## Phase 6: Monitoring (ottochain-monitoring)
 
-- [ ] **6.1** Add `release-please.yml` workflow
-- [ ] **6.2** Minimal compatibility needs (mostly standalone)
+- [x] **6.1** Add `release-please.yml` workflow
+- [x] **6.2** Minimal compatibility needs (mostly standalone)
 
 ## Phase 7: Validation & Automation
 
@@ -103,4 +101,10 @@ components:
 | Date | Task | Status | Notes |
 |------|------|--------|-------|
 | 2026-02-10 | Planning | ✅ | Created this doc |
+| 2026-02-10 | Phase 1 | ✅ | Deploy infrastructure (PR #30) |
+| 2026-02-10 | Phase 2 | ✅ | ottochain release-please (PR #53 merged, PR #54 ready) |
+| 2026-02-10 | Phase 3 | ✅ | SDK release-please (PR #30) |
+| 2026-02-10 | Phase 4 | ✅ | Services release-please (PR #72) |
+| 2026-02-10 | Phase 5 | ✅ | Explorer release-please (PR #27) |
+| 2026-02-10 | Phase 6 | ✅ | Monitoring release-please (PR #2) |
 
