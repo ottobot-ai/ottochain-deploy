@@ -40,7 +40,7 @@ on:
 env:
   # Single image with all 5 layers (tessellation + metagraph)
   # Ensures version compatibility
-  IMAGE: ghcr.io/ottobot-ai/ottochain-metagraph
+  IMAGE: ghcr.io/scasplte2/ottochain-metagraph
   IMAGE_TAG: ${{ inputs.image_tag || 'latest' }}
 
 jobs:
