@@ -1,0 +1,54 @@
+# Scratch Environment - Rapid Iteration
+# Source: branches (bleeding edge)
+# Auto-deploy: on push to develop branches
+
+name: scratch
+mode: branch
+auto_deploy: true
+
+sources:
+  tessellation:
+    type: upstream
+    repo: Constellation-Labs/tessellation
+    ref: main
+    
+  metakit:
+    type: upstream
+    repo: Constellation-Labs/metakit
+    ref: main
+    
+  ottochain:
+    type: core
+    repo: scasplte2/ottochain
+    ref: develop
+    
+  sdk:
+    type: ecosystem
+    repo: ottobot-ai/ottochain-sdk
+    ref: develop
+    
+  services:
+    type: ecosystem
+    repo: ottobot-ai/ottochain-services
+    ref: develop
+    
+  explorer:
+    type: ecosystem
+    repo: ottobot-ai/ottochain-explorer
+    ref: develop
+    
+  monitoring:
+    type: ecosystem
+    repo: ottobot-ai/ottochain-monitoring
+    ref: develop
+
+infrastructure:
+  cluster: hetzner
+  nodes:
+    - host: 5.78.90.207
+      name: node1
+    - host: 5.78.113.25
+      name: node2
+    - host: 5.78.107.77
+      name: node3
+  services_host: 5.78.121.248
