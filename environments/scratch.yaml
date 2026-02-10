@@ -20,7 +20,7 @@ sources:
   ottochain:
     type: core
     repo: scasplte2/ottochain
-    ref: dev
+    ref: develop
     
   sdk:
     type: ecosystem
