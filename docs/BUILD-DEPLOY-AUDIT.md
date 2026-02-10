@@ -8,6 +8,84 @@ The ecosystem has a solid Docker-based deploy system with version management via
 
 ---
 
+## Release Pipeline Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     OTTOCHAIN RELEASE PIPELINE                       │
+└─────────────────────────────────────────────────────────────────────┘
+
+1. TAG A VERSION IN COMPONENT REPO
+   git tag v0.5.0 && git push --tags
+              │
+              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  scasplte2/ottochain                                                │
+│  ┌──────────────────┐    ┌──────────────────┐                       │
+│  │ release.yml      │    │ docker.yml       │  (both trigger on v*) │
+│  │ (JAR artifacts)  │    │ (Docker image)   │                       │
+│  └────────┬─────────┘    └────────┬─────────┘                       │
+│           │                       │                                  │
+│           ▼                       ▼                                  │
+│  • Build 3 JARs (sbt)    • Build Docker image                       │
+│  • Upload to GH Release  • Push to ghcr.io/ottobot-ai/ottochain     │
+│  • Notify deploy repo    • Notify deploy repo                       │
+└───────────┬──────────────────────┬──────────────────────────────────┘
+            │                      │
+            └──────────┬───────────┘
+                       ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  ottobot-ai/ottochain-deploy                                        │
+│  ┌──────────────────────────────────────────────────────┐           │
+│  │ version-bump.yml (receives repository_dispatch)      │           │
+│  │ • Updates versions.yml                               │           │
+│  │ • Creates PR: "Release: ottochain v0.5.0"            │           │
+│  └───────────────────────┬──────────────────────────────┘           │
+│                          ▼                                          │
+│  Human merges PR → push to release/scratch                          │
+│                          │                                          │
+│  ┌───────────────────────▼──────────────────────────────┐           │
+│  │ release-scratch.yml                                   │           │
+│  │ • Deploys to Hetzner cluster                         │           │
+│  │ • Runs smoke tests                                   │           │
+│  └──────────────────────────────────────────────────────┘           │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│  Similar flow for other components:                                  │
+│  • ottochain-services  → release.yml → Docker + dispatch            │
+│  • ottochain-explorer  → release.yml → Docker + dispatch            │
+│  • ottochain-sdk       → release.yml → npm publish + dispatch       │
+│  • ottochain-monitoring → release.yml → dispatch                    │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### What Gets Built
+
+| Component | Artifacts | Destination |
+|-----------|-----------|-------------|
+| **ottochain** | 3 JARs (metagraph-l0, currency-l1, data-l1) | GitHub Releases |
+| **ottochain** | Docker image (all 5 layers) | `ghcr.io/ottobot-ai/ottochain-metagraph` |
+| **services** | Docker image (bridge + indexer + monitor) | `ghcr.io/ottobot-ai/ottochain-services` |
+| **explorer** | Docker image (web UI) | `ghcr.io/ottobot-ai/ottochain-explorer` |
+| **sdk** | npm package | `@ottochain/sdk` on npm |
+
+### JARs vs Docker
+
+**Docker image** (recommended for deployment):
+- Single image contains all 5 layers
+- Layer selection via `LAYER=ml0` env var
+- No build on deploy — just pull and run
+- Used by deploy workflows
+
+**JARs** (available for):
+- Manual/custom deployments without Docker
+- Tessellation euclid-based setups
+- Archive/audit trail on GitHub Releases
+- Debugging specific layer issues
+
+---
+
 ## Current Architecture
 
 ### Repositories
