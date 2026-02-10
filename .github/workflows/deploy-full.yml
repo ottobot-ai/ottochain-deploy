@@ -25,9 +25,9 @@ on:
         default: 'false'
         type: boolean
       metagraph_version:
-        description: 'Metagraph version/branch'
+        description: 'Metagraph image tag (e.g., latest, v0.6.0, sha)'
         required: false
-        default: 'main'
+        default: 'latest'
         type: string
       services_version:
         description: 'Services image version'
