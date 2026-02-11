@@ -17,36 +17,30 @@ components:
   ottochain:
     version: "0.5.0"
     repo: "scasplte2/ottochain"
-    
   # Tessellation SDK version (external dependency)
   tessellation:
     version: "4.0.0-rc.2"
     repo: "Constellation-Labs/tessellation"
-    
   # OttoChain SDK (TypeScript) - published to npmjs.com as @ottochain/sdk
   sdk:
     version: "0.2.0"
     repo: "ottobot-ai/ottochain-sdk"
     package: "@ottochain/sdk"
     registry: "https://registry.npmjs.org"
-    
   # OttoChain Services (TypeScript) - Docker image
   services:
     version: "0.2.0"
     image: "ghcr.io/ottobot-ai/ottochain-services"
     repo: "ottobot-ai/ottochain-services"
-    
   # OttoChain Explorer (TypeScript) - Docker image
   explorer:
     version: "0.1.0"
     image: "ghcr.io/ottobot-ai/ottochain-explorer"
     repo: "ottobot-ai/ottochain-explorer"
-    
   # OttoChain Monitoring (configs/dashboards)
   monitoring:
     version: "0.1.0"
     repo: "ottobot-ai/ottochain-monitoring"
-
 # === Monitoring Tool Versions ===
 monitoring_tools:
   prometheus: "v2.50.0"
@@ -57,20 +51,18 @@ monitoring_tools:
   node_exporter: "v1.7.0"
   postgres_exporter: "v0.15.0"
   redis_exporter: "v1.56.0"
-
 # === Infrastructure ===
 infra:
   postgres: "16-alpine"
   redis: "7-alpine"
   java: "21"
-
 # === Deployed State (updated by CI after successful deploy) ===
 # These are the ACTUAL versions running in each environment
 deployed:
   scratch:
-    ottochain: ""
-    services: ""
-    explorer: ""
+    ottochain: "0.5.0"
+    services: "0.2.0"
+    explorer: "0.1.0"
     monitoring: ""
-    timestamp: ""
-    workflow_run: ""
+    timestamp: "2026-02-11T22:27:19Z"
+    workflow_run: "21925335602"
