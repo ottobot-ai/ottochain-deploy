@@ -506,6 +506,23 @@ jobs:
 
           sleep 25
 
+          # Wait for ML0 validators to reach ReadyToJoin state before attempting join
+          echo "Waiting for ML0 validators to reach ReadyToJoin state..."
+          for host in node2 node3; do
+            for i in $(seq 1 30); do
+              STATE=$(ssh "$host" 'curl -sf http://localhost:9200/node/state 2>/dev/null | tr -d \"' || echo "unknown")
+              echo "$host ML0 state: $STATE (attempt $i/30)"
+              if [ "$STATE" = "ReadyToJoin" ] || [ "$STATE" = "Observing" ] || [ "$STATE" = "Ready" ]; then
+                echo "✓ $host ML0 ready"
+                break
+              fi
+              if [ "$i" = "30" ]; then
+                echo "::warning::$host ML0 did not reach ReadyToJoin state (current: $STATE)"
+              fi
+              sleep 5
+            done
+          done
+
           # Join ML0 validators to cluster
           echo "Joining ML0 validators to cluster..."
           echo "ML0_PEER_ID: ${ML0_PEER_ID:0:32}..."
