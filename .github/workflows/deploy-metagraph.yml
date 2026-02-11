@@ -161,16 +161,14 @@ jobs:
         run: |
           NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
 
-          # Download tessellation keytool v4.x if not present
-          ssh node1 "test -f /opt/ottochain/keytool.jar || curl -sL -o /opt/ottochain/keytool.jar \
-            https://github.com/Constellation-Labs/tessellation/releases/download/v4.0.0-rc.2/cl-keytool.jar"
+          # Download tessellation cl-wallet.jar v4.x if not present (has show-address/show-id commands)
+          ssh node1 "test -f /opt/ottochain/cl-wallet.jar || curl -sL -o /opt/ottochain/cl-wallet.jar \
+            https://github.com/Constellation-Labs/tessellation/releases/download/v4.0.0-rc.2/cl-wallet.jar"
 
-          # Get wallet address from keystore using keytool
+          # Get wallet address from keystore using cl-wallet
           echo "Getting wallet address..."
-          WALLET=$(ssh node1 "java -jar /opt/ottochain/keytool.jar show-address \
-            --keystore /opt/ottochain/keys/key.p12 \
-            --alias alias \
-            --password '${{ secrets.CL_KEYSTORE_PASSWORD }}'" 2>&1 | grep -oP 'DAG[a-zA-Z0-9]+' | head -1)
+          WALLET=$(ssh node1 "CL_KEYSTORE=/opt/ottochain/keys/key.p12 CL_KEYALIAS=alias CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
+            java -jar /opt/ottochain/cl-wallet.jar show-address" 2>&1 | grep -oP 'DAG[a-zA-Z0-9]+' | head -1)
 
           if [ -z "$WALLET" ]; then
             echo "❌ Failed to get wallet address"
@@ -180,10 +178,8 @@ jobs:
 
           # Get peer ID from keystore (needed for GL0 peer info)
           echo "Getting peer ID..."
-          PEER_ID=$(ssh node1 "java -jar /opt/ottochain/keytool.jar show-id \
-            --keystore /opt/ottochain/keys/key.p12 \
-            --alias alias \
-            --password '${{ secrets.CL_KEYSTORE_PASSWORD }}'" 2>&1 | grep -oP '[a-f0-9]{128}' | head -1)
+          PEER_ID=$(ssh node1 "CL_KEYSTORE=/opt/ottochain/keys/key.p12 CL_KEYALIAS=alias CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
+            java -jar /opt/ottochain/cl-wallet.jar show-id" 2>&1 | grep -oP '[a-f0-9]{128}' | head -1)
 
           if [ -z "$PEER_ID" ]; then
             echo "❌ Failed to get peer ID"
