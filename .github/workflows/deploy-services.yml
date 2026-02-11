@@ -155,8 +155,10 @@ jobs:
                 - METAGRAPH_DL1_URL=${METAGRAPH_DL1_URL}
                 - INDEXER_PORT=3031
                 - INDEXER_CALLBACK_URL=${INDEXER_CALLBACK_URL:-http://indexer:3031/webhook/snapshot}
+                - REDIS_URL=${REDIS_URL:-redis://redis:6379}
               depends_on:
                 - postgres
+                - redis
               networks:
                 - ottochain
               healthcheck:
