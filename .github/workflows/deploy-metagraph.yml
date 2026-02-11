@@ -159,8 +159,9 @@ jobs:
       - name: Create ML0 genesis snapshot
         if: ${{ inputs.wipe_state == true }}
         run: |
-          # Get wallet address from keystore
+          # Get wallet address from keystore (bypass entrypoint for ad-hoc command)
           WALLET=$(ssh node1 "docker run --rm \
+            --entrypoint '' \
             -v /opt/ottochain/keys:/ottochain/keys:ro \
             -e CL_KEYSTORE=/ottochain/keys/key.p12 \
             -e CL_KEYALIAS=alias \
@@ -173,8 +174,9 @@ jobs:
           # Create genesis.csv with initial token allocation
           ssh node1 "echo '${WALLET},1000000000000000' > /opt/ottochain/genesis/genesis.csv"
 
-          # Run create-genesis to produce genesis.snapshot
+          # Run create-genesis to produce genesis.snapshot (bypass entrypoint)
           ssh node1 "docker run --rm \
+            --entrypoint '' \
             -v /opt/ottochain/keys:/ottochain/keys:ro \
             -v /opt/ottochain/genesis:/ottochain/genesis \
             -e CL_KEYSTORE=/ottochain/keys/key.p12 \
