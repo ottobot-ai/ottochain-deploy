@@ -456,6 +456,10 @@ jobs:
           echo "token_id=$TOKEN_ID" >> "$GITHUB_OUTPUT"
           echo "Token ID: $TOKEN_ID"
 
+          # Get token ID from genesis for ML0 validators
+          TOKEN_ID=$(ssh node1 'cat /opt/ottochain/genesis/genesis.address')
+          echo "Token ID for ML0 validators: $TOKEN_ID"
+          
           for host_info in "node2:${NODE2_IP}" "node3:${NODE3_IP}"; do
             HOST="${host_info%%:*}"
             IP="${host_info##*:}"
@@ -477,6 +481,7 @@ jobs:
               -e CL_GLOBAL_L0_PEER_ID=${GL0_PEER_ID} \
               -e CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP} \
               -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
+              -e CL_L0_TOKEN_IDENTIFIER=${TOKEN_ID} \
               ${{ env.IMAGE }}:${{ env.IMAGE_TAG }} \
               java -Xmx8g -Xms4g -jar /ottochain/jars/ml0.jar run-validator"
           done
@@ -674,13 +679,20 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/hetzner
           chmod 600 ~/.ssh/hetzner
-          cat >> ~/.ssh/config << EOF
-          Host node1
-            HostName ${{ secrets.HETZNER_NODE1_IP }}
+          for host in node1 node2 node3; do
+            case $host in
+              node1) ip="${{ secrets.HETZNER_NODE1_IP }}" ;;
+              node2) ip="${{ secrets.HETZNER_NODE2_IP }}" ;;
+              node3) ip="${{ secrets.HETZNER_NODE3_IP }}" ;;
+            esac
+            cat >> ~/.ssh/config << EOF
+          Host $host
+            HostName $ip
             User root
             IdentityFile ~/.ssh/hetzner
             StrictHostKeyChecking no
           EOF
+          done
 
       - name: Check all layers
         run: |
