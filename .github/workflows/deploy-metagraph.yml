@@ -156,62 +156,9 @@ jobs:
             ssh $host 'mkdir -p /opt/ottochain/{data,keys,genesis}'
           done
 
-      - name: Create ML0 genesis snapshot
-        if: ${{ inputs.wipe_state == true }}
-        run: |
-          NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
-
-          # Download tessellation cl-wallet.jar v4.x if not present (has show-address/show-id commands)
-          ssh node1 "test -f /opt/ottochain/cl-wallet.jar || curl -sL -o /opt/ottochain/cl-wallet.jar \
-            https://github.com/Constellation-Labs/tessellation/releases/download/v4.0.0-rc.2/cl-wallet.jar"
-
-          # Get wallet address from keystore using cl-wallet
-          echo "Getting wallet address..."
-          WALLET=$(ssh node1 "CL_KEYSTORE=/opt/ottochain/keys/key.p12 CL_KEYALIAS=alias CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
-            java -jar /opt/ottochain/cl-wallet.jar show-address" 2>&1 | grep -oP 'DAG[a-zA-Z0-9]+' | head -1)
-
-          if [ -z "$WALLET" ]; then
-            echo "❌ Failed to get wallet address"
-            exit 1
-          fi
-          echo "Wallet address: $WALLET"
-
-          # Get peer ID from keystore (needed for GL0 peer info)
-          echo "Getting peer ID..."
-          PEER_ID=$(ssh node1 "CL_KEYSTORE=/opt/ottochain/keys/key.p12 CL_KEYALIAS=alias CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
-            java -jar /opt/ottochain/cl-wallet.jar show-id" 2>&1 | grep -oP '[a-f0-9]{128}' | head -1)
-
-          if [ -z "$PEER_ID" ]; then
-            echo "❌ Failed to get peer ID"
-            exit 1
-          fi
-          echo "Peer ID: ${PEER_ID:0:16}..."
-
-          # Create genesis.csv with initial token allocation
-          ssh node1 "echo '${WALLET},1000000000000000' > /opt/ottochain/genesis/genesis.csv"
-          echo "Genesis CSV:"
-          ssh node1 "cat /opt/ottochain/genesis/genesis.csv"
-
-          # Run create-genesis with GL0 peer info (required in tessellation v4.x)
-          echo "Creating genesis snapshot..."
-          ssh node1 "docker run --rm \
-            --entrypoint '' \
-            -v /opt/ottochain/keys:/ottochain/keys:ro \
-            -v /opt/ottochain/genesis:/ottochain/genesis \
-            -w /ottochain/genesis \
-            -e CL_KEYSTORE=/ottochain/keys/key.p12 \
-            -e CL_KEYALIAS=alias \
-            -e CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
-            -e CL_GLOBAL_L0_PEER_ID=${PEER_ID} \
-            -e CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP} \
-            -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
-            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }} \
-            java -jar /ottochain/jars/ml0.jar create-genesis /ottochain/genesis/genesis.csv"
-
-          # Verify genesis was created
-          ssh node1 "ls -la /opt/ottochain/genesis/"
-          echo "✅ ML0 genesis snapshot created"
-
+      # NOTE: In tessellation v4.x, ML0 create-genesis requires GL0 to be running
+      # So we start GL0 first, then create ML0 genesis, then start ML0
+      
       - name: Start GL0 Genesis
         id: start-gl0
         run: |
@@ -353,6 +300,61 @@ jobs:
                 -d '{\"id\": \"${GL1_PEER_ID}\", \"ip\": \"${NODE1_IP}\", \"p2pPort\": 9101}'" || true
             done
           fi
+
+      # In tessellation v4.x, create-genesis requires GL0 to be running
+      - name: Create ML0 genesis snapshot
+        if: ${{ inputs.wipe_state == true }}
+        run: |
+          NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
+          GL0_PEER_ID="${{ steps.start-gl0.outputs.gl0_peer_id }}"
+
+          # Download tessellation cl-wallet.jar v4.x if not present (has show-address/show-id commands)
+          ssh node1 "test -f /opt/ottochain/cl-wallet.jar || curl -sL -o /opt/ottochain/cl-wallet.jar \
+            https://github.com/Constellation-Labs/tessellation/releases/download/v4.0.0-rc.2/cl-wallet.jar"
+
+          # Get wallet address from keystore using cl-wallet
+          echo "Getting wallet address..."
+          WALLET=$(ssh node1 "CL_KEYSTORE=/opt/ottochain/keys/key.p12 CL_KEYALIAS=alias CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
+            java -jar /opt/ottochain/cl-wallet.jar show-address" 2>&1 | grep -oP 'DAG[a-zA-Z0-9]+' | head -1)
+
+          if [ -z "$WALLET" ]; then
+            echo "❌ Failed to get wallet address"
+            exit 1
+          fi
+          echo "Wallet address: $WALLET"
+
+          # Create genesis.csv with initial token allocation
+          ssh node1 "echo '${WALLET},1000000000000000' > /opt/ottochain/genesis/genesis.csv"
+          echo "Genesis CSV:"
+          ssh node1 "cat /opt/ottochain/genesis/genesis.csv"
+
+          # Run create-genesis with GL0 running (required in tessellation v4.x)
+          # The command connects to GL0 to fetch the current global snapshot
+          echo "Creating genesis snapshot (GL0 must be running)..."
+          ssh node1 "docker run --rm \
+            --network host \
+            --entrypoint '' \
+            -v /opt/ottochain/keys:/ottochain/keys:ro \
+            -v /opt/ottochain/genesis:/ottochain/genesis \
+            -w /ottochain/genesis \
+            -e CL_KEYSTORE=/ottochain/keys/key.p12 \
+            -e CL_KEYALIAS=alias \
+            -e CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
+            -e CL_GLOBAL_L0_PEER_ID=${GL0_PEER_ID} \
+            -e CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP} \
+            -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
+            -e CL_PUBLIC_HTTP_PORT=9200 \
+            -e CL_P2P_HTTP_PORT=9201 \
+            -e CL_CLI_HTTP_PORT=9202 \
+            -e CL_COLLATERAL=0 \
+            -e CL_APP_ENV=dev \
+            -e CL_EXTERNAL_IP=${NODE1_IP} \
+            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }} \
+            java -jar /ottochain/jars/ml0.jar create-genesis /ottochain/genesis/genesis.csv"
+
+          # Verify genesis was created
+          ssh node1 "ls -la /opt/ottochain/genesis/"
+          echo "✅ ML0 genesis snapshot created"
 
       - name: Start ML0
         id: start-ml0
