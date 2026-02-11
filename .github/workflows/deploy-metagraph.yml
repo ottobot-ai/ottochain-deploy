@@ -506,11 +506,33 @@ jobs:
 
           sleep 25
 
+          # Join ML0 validators to cluster
+          echo "Joining ML0 validators to cluster..."
+          echo "ML0_PEER_ID: ${ML0_PEER_ID:0:32}..."
+          echo "NODE1_IP: ${NODE1_IP}"
+          
           for host in node2 node3; do
-            ssh $host "docker exec ml0 curl -sf -X POST http://127.0.0.1:9202/cluster/join \
-              -H 'Content-Type: application/json' \
-              -d '{\"id\": \"${ML0_PEER_ID}\", \"ip\": \"${NODE1_IP}\", \"p2pPort\": 9201}'" || true
+            echo "Joining $host ML0..."
+            # Use heredoc to avoid quoting issues with JSON
+            ssh $host << JOINEOF
+docker exec ml0 curl -sf -X POST http://127.0.0.1:9202/cluster/join \
+  -H 'Content-Type: application/json' \
+  -d '{"id": "${ML0_PEER_ID}", "ip": "${NODE1_IP}", "p2pPort": 9201}'
+JOINEOF
+            if [ $? -eq 0 ]; then
+              echo "✓ $host ML0 join initiated"
+            else
+              echo "⚠ $host ML0 join failed (may already be joined)"
+            fi
           done
+          
+          # Wait and verify cluster formed
+          sleep 10
+          ML0_CLUSTER_SIZE=$(ssh node1 'curl -sf http://localhost:9200/cluster/info | jq length' || echo "0")
+          echo "ML0 cluster size: $ML0_CLUSTER_SIZE"
+          if [ "$ML0_CLUSTER_SIZE" -lt 3 ]; then
+            echo "::warning::ML0 cluster has only $ML0_CLUSTER_SIZE nodes (expected 3)"
+          fi
 
       - name: Start CL1
         run: |
