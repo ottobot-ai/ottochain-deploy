@@ -294,6 +294,10 @@ jobs:
           pm2 stop all 2>/dev/null || true
           pm2 delete all 2>/dev/null || true
           
+          # Clean up any orphan containers from previous runs/projects
+          # This handles containers that compose down won't remove
+          docker rm -f gateway bridge indexer explorer postgres redis 2>/dev/null || true
+          
           # Pull images and deploy
           # IMPORTANT: --force-recreate ensures containers pick up new .env values
           docker compose pull
