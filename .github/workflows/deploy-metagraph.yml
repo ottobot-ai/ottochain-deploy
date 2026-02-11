@@ -511,15 +511,14 @@ jobs:
           echo "ML0_PEER_ID: ${ML0_PEER_ID:0:32}..."
           echo "NODE1_IP: ${NODE1_IP}"
           
+          # Build join payload once (expands variables locally)
+          JOIN_PAYLOAD=$(printf '{"id": "%s", "ip": "%s", "p2pPort": 9201}' "$ML0_PEER_ID" "$NODE1_IP")
+          echo "JOIN_PAYLOAD: $JOIN_PAYLOAD"
+          
           for host in node2 node3; do
             echo "Joining $host ML0..."
-            # Use heredoc to avoid quoting issues with JSON
-            ssh $host << JOINEOF
-docker exec ml0 curl -sf -X POST http://127.0.0.1:9202/cluster/join \
-  -H 'Content-Type: application/json' \
-  -d '{"id": "${ML0_PEER_ID}", "ip": "${NODE1_IP}", "p2pPort": 9201}'
-JOINEOF
-            if [ $? -eq 0 ]; then
+            # Pass pre-built payload to avoid quoting issues
+            if ssh "$host" "docker exec ml0 curl -sf -X POST http://127.0.0.1:9202/cluster/join -H 'Content-Type: application/json' -d '$JOIN_PAYLOAD'"; then
               echo "✓ $host ML0 join initiated"
             else
               echo "⚠ $host ML0 join failed (may already be joined)"
