@@ -31,10 +31,10 @@ check() {
     local result="$2"
     if [ "$result" = "true" ] || [ "$result" = "0" ]; then
         log "✅ $name"
-        ((TESTS_PASSED++))
+        ((++TESTS_PASSED)) || true
     else
         warn "❌ $name"
-        ((TESTS_FAILED++))
+        ((++TESTS_FAILED)) || true
     fi
 }
 
@@ -67,15 +67,15 @@ log "Phase 2: Capturing baseline metrics"
 # Get current indexer status
 INDEXER_STATUS=$(curl -sf "${INDEXER_URL}/status" 2>/dev/null || echo '{}')
 BASELINE_INDEXED=$(echo "$INDEXER_STATUS" | jq -r '.lastIndexedOrdinal // 0')
-BASELINE_ORDINAL=$(curl -sf "${ML0_URL}/global-snapshots/latest" 2>/dev/null | jq -r '.value.ordinal // 0')
+BASELINE_ORDINAL=$(curl -sf "${ML0_URL}/snapshots/latest" 2>/dev/null | jq -r '.value.ordinal // 0')
 
 log "  Baseline indexed ordinal: $BASELINE_INDEXED"
 log "  Baseline ML0 ordinal: $BASELINE_ORDINAL"
 
 # Get agent count via GraphQL
-AGENT_COUNT=$(curl -sf "${GATEWAY_URL}/graphql" \
+AGENT_COUNT=$(curl -s "${GATEWAY_URL}/graphql" \
   -H "Content-Type: application/json" \
-  -d '{"query":"{ agents { totalCount } }"}' 2>/dev/null | jq -r '.data.agents.totalCount // 0')
+  -d '{"query":"{ agents { address } }"}' 2>/dev/null | jq -r '.data.agents | length // 0')
 log "  Baseline agents: $AGENT_COUNT"
 
 # =============================================================================
@@ -103,7 +103,7 @@ sleep $((TRAFFIC_DURATION + 30))
 log "Phase 4: Verifying data flow"
 
 # Check ML0 ordinal advanced
-NEW_ORDINAL=$(curl -sf "${ML0_URL}/global-snapshots/latest" 2>/dev/null | jq -r '.value.ordinal // 0')
+NEW_ORDINAL=$(curl -sf "${ML0_URL}/snapshots/latest" 2>/dev/null | jq -r '.value.ordinal // 0')
 ORDINAL_DIFF=$((NEW_ORDINAL - BASELINE_ORDINAL))
 check "ML0 ordinals advancing (diff: $ORDINAL_DIFF)" "$([ "$ORDINAL_DIFF" -gt 0 ] && echo true || echo false)"
 
@@ -117,9 +117,9 @@ ORDINAL_LAG=$((NEW_ORDINAL - NEW_INDEXED))
 check "Indexer caught up (lag: $ORDINAL_LAG)" "$([ "$ORDINAL_LAG" -lt 20 ] && echo true || echo false)"
 
 # Check agents exist via GraphQL
-NEW_AGENT_COUNT=$(curl -sf "${GATEWAY_URL}/graphql" \
+NEW_AGENT_COUNT=$(curl -s "${GATEWAY_URL}/graphql" \
   -H "Content-Type: application/json" \
-  -d '{"query":"{ agents { totalCount } }"}' 2>/dev/null | jq -r '.data.agents.totalCount // 0')
+  -d '{"query":"{ agents { address } }"}' 2>/dev/null | jq -r '.data.agents | length // 0')
 check "Gateway has agents ($NEW_AGENT_COUNT)" "$([ "$NEW_AGENT_COUNT" -gt 0 ] && echo true || echo false)"
 
 # =============================================================================
