@@ -156,29 +156,54 @@ jobs:
             ssh $host 'mkdir -p /opt/ottochain/{data,keys,genesis}'
           done
 
-      # NOTE: In tessellation v4.x, ML0 create-genesis requires GL0 to be running
-      # So we start GL0 first, then create ML0 genesis, then start ML0
+      # NOTE: In tessellation v4.x:
+      # - GL0 run-genesis requires a genesis CSV file with initial balances
+      # - ML0 create-genesis requires GL0 to be running
       
+      - name: Create GL0 genesis file
+        if: ${{ inputs.wipe_state == true }}
+        run: |
+          # Download cl-wallet.jar for wallet address extraction
+          ssh node1 "test -f /opt/ottochain/cl-wallet.jar || curl -sL -o /opt/ottochain/cl-wallet.jar \
+            https://github.com/Constellation-Labs/tessellation/releases/download/v4.0.0-rc.2/cl-wallet.jar"
+          
+          # Get wallet address
+          WALLET=$(ssh node1 "CL_KEYSTORE=/opt/ottochain/keys/key.p12 CL_KEYALIAS=alias CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
+            java -jar /opt/ottochain/cl-wallet.jar show-address" 2>&1 | grep -oP 'DAG[a-zA-Z0-9]+' | head -1)
+          
+          echo "GL0 genesis wallet: $WALLET"
+          
+          # Create genesis.csv for GL0 (DAG initial balances)
+          ssh node1 "echo '${WALLET},1000000000000000' > /opt/ottochain/genesis/gl0-genesis.csv"
+          ssh node1 "cat /opt/ottochain/genesis/gl0-genesis.csv"
+          echo "✅ GL0 genesis file created"
+
       - name: Start GL0 Genesis
         id: start-gl0
         run: |
           NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
-
-          ssh node1 << EOF
-          docker run -d --name gl0 \
+          
+          # In v4.x, run-genesis requires the genesis CSV as a positional argument
+          # We bypass the entrypoint and run the JAR directly with proper args
+          ssh node1 "docker run -d --name gl0 \
             --restart unless-stopped \
+            --entrypoint '' \
             -p 9000:9000 -p 9001:9001 -p 9002:9002 \
             -v /opt/ottochain/keys:/ottochain/keys:ro \
             -v /opt/ottochain/data:/ottochain/data \
-            -e LAYER=gl0 \
-            -e RUN_MODE=run-genesis \
-            -e CL_APP_ENV=dev \
-            -e CL_EXTERNAL_IP=${NODE1_IP} \
-            -e CL_COLLATERAL=0 \
-            -e CL_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }} \
-            -e JAVA_OPTS="-Xmx8g -Xms4g" \
-            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}
-          EOF
+            -v /opt/ottochain/genesis:/ottochain/genesis:ro \
+            -e CL_KEYSTORE=/ottochain/keys/key.p12 \
+            -e CL_KEYALIAS=alias \
+            -e CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
+            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }} \
+            java -Xmx8g -Xms4g -jar /ottochain/jars/gl0.jar run-genesis \
+              --env dev \
+              --ip ${NODE1_IP} \
+              --public-port 9000 \
+              --p2p-port 9001 \
+              --cli-port 9002 \
+              --collateral 0 \
+              /ottochain/genesis/gl0-genesis.csv"
 
           echo "Waiting for GL0 to become Ready..."
           for i in $(seq 1 90); do
