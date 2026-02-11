@@ -69,25 +69,8 @@ jobs:
         run: |
           ssh services "mkdir -p /opt/ottochain-services"
 
-      - name: Reset database and Redis
-        if: ${{ inputs.reset_db == true }}
-        run: |
-          echo "Flushing Postgres and Redis..."
-          ssh services << 'RESET_SCRIPT'
-          docker exec redis redis-cli FLUSHALL 2>/dev/null && echo "✓ Redis flushed" || echo "ℹ Redis not running"
-          
-          docker exec postgres psql -U ottochain -d ottochain -c "
-            DO \$\$
-            DECLARE
-              r RECORD;
-            BEGIN
-              FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
-                EXECUTE 'TRUNCATE TABLE \"' || r.tablename || '\" CASCADE';
-              END LOOP;
-            END \$\$;
-          " 2>/dev/null && echo "✓ Postgres tables truncated" || echo "ℹ Postgres not running"
-          RESET_SCRIPT
-
+      # Note: Database reset moved to after containers are started
+      
       - name: Write docker-compose.yml
         run: |
           ssh services "cat > /opt/ottochain-services/docker-compose.yml" << 'COMPOSE_EOF'
@@ -312,12 +295,49 @@ jobs:
           pm2 delete all 2>/dev/null || true
           
           # Pull images and deploy
+          # IMPORTANT: --force-recreate ensures containers pick up new .env values
           docker compose pull
-          docker compose up -d
+          docker compose down --remove-orphans 2>/dev/null || true
+          docker compose up -d --force-recreate
+          
+          # Wait for postgres/redis to be ready
+          sleep 10
+          DEPLOY_SCRIPT
+
+      - name: Reset database and Redis
+        if: ${{ inputs.reset_db == true }}
+        run: |
+          echo "Resetting database and Redis (wipe_state requested)..."
+          ssh services << 'RESET_SCRIPT'
+          # Flush Redis
+          docker exec redis redis-cli FLUSHALL && echo "✓ Redis flushed"
+          
+          # Truncate all Postgres tables
+          docker exec postgres psql -U ottochain -d ottochain -c "
+            DO \$\$
+            DECLARE
+              r RECORD;
+            BEGIN
+              FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                EXECUTE 'TRUNCATE TABLE \"' || r.tablename || '\" CASCADE';
+              END LOOP;
+            END \$\$;
+          " && echo "✓ Postgres tables truncated"
+          RESET_SCRIPT
+          
+      - name: Run migrations and restart services
+        run: |
+          ssh services << 'MIGRATE_SCRIPT'
+          cd /opt/ottochain-services
           
           # Run database migrations
-          sleep 10
           docker compose exec -T indexer npx prisma db push --accept-data-loss || true
+          
+          # Restart services to pick up clean state
+          docker compose restart gateway bridge indexer monitor || true
+          
+          echo "✓ Services deployed and ready"
+          MIGRATE_SCRIPT
           
           # Show status
           docker compose ps
