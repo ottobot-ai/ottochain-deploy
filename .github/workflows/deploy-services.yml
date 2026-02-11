@@ -285,6 +285,9 @@ jobs:
           POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
           POSTGRES_DB=ottochain
 
+          # Redis (must be explicit - compose defaults don't always apply)
+          REDIS_URL=redis://redis:6379
+
           # Metagraph endpoints
           METAGRAPH_ML0_URL=http://${METAGRAPH_IP}:9200
           METAGRAPH_DL1_URL=http://${METAGRAPH_IP}:9400
