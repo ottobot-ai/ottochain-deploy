@@ -251,8 +251,9 @@ jobs:
 
           sleep 20
 
+          # CLI port binds to container's 127.0.0.1, must use docker exec
           for host in node2 node3; do
-            ssh $host "curl -sf -X POST http://127.0.0.1:9002/cluster/join \
+            ssh $host "docker exec gl0 curl -sf -X POST http://127.0.0.1:9002/cluster/join \
               -H 'Content-Type: application/json' \
               -d '{\"id\": \"${GL0_PEER_ID}\", \"ip\": \"${NODE1_IP}\", \"p2pPort\": 9001}'" || true
           done
@@ -321,7 +322,7 @@ jobs:
 
           if [ -n "$GL1_PEER_ID" ] && [ "$GL1_PEER_ID" != "null" ]; then
             for host in node2 node3; do
-              ssh $host "curl -sf -X POST http://127.0.0.1:9102/cluster/join \
+              ssh $host "docker exec gl1 curl -sf -X POST http://127.0.0.1:9102/cluster/join \
                 -H 'Content-Type: application/json' \
                 -d '{\"id\": \"${GL1_PEER_ID}\", \"ip\": \"${NODE1_IP}\", \"p2pPort\": 9101}'" || true
             done
@@ -452,13 +453,10 @@ jobs:
           ML0_PEER_ID=$(ssh node1 'curl -sf http://localhost:9200/node/info | jq -r .id')
           echo "ml0_peer_id=$ML0_PEER_ID" >> "$GITHUB_OUTPUT"
 
-          TOKEN_ID=$(ssh node1 'curl -sf http://localhost:9200/node/info | jq -r .address' || echo "")
+          # v4.x doesn't expose .address in /node/info, read from genesis file
+          TOKEN_ID=$(ssh node1 'cat /opt/ottochain/genesis/genesis.address')
           echo "token_id=$TOKEN_ID" >> "$GITHUB_OUTPUT"
           echo "Token ID: $TOKEN_ID"
-
-          # Get token ID from genesis for ML0 validators
-          TOKEN_ID=$(ssh node1 'cat /opt/ottochain/genesis/genesis.address')
-          echo "Token ID for ML0 validators: $TOKEN_ID"
           
           for host_info in "node2:${NODE2_IP}" "node3:${NODE3_IP}"; do
             HOST="${host_info%%:*}"
@@ -489,7 +487,7 @@ jobs:
           sleep 25
 
           for host in node2 node3; do
-            ssh $host "curl -sf -X POST http://127.0.0.1:9202/cluster/join \
+            ssh $host "docker exec ml0 curl -sf -X POST http://127.0.0.1:9202/cluster/join \
               -H 'Content-Type: application/json' \
               -d '{\"id\": \"${ML0_PEER_ID}\", \"ip\": \"${NODE1_IP}\", \"p2pPort\": 9201}'" || true
           done
@@ -575,7 +573,7 @@ jobs:
 
           if [ -n "$CL1_PEER_ID" ] && [ "$CL1_PEER_ID" != "null" ]; then
             for host in node2 node3; do
-              ssh $host "curl -sf -X POST http://127.0.0.1:9302/cluster/join \
+              ssh $host "docker exec cl1 curl -sf -X POST http://127.0.0.1:9302/cluster/join \
                 -H 'Content-Type: application/json' \
                 -d '{\"id\": \"${CL1_PEER_ID}\", \"ip\": \"${NODE1_IP}\", \"p2pPort\": 9301}'" || true
             done
@@ -661,7 +659,7 @@ jobs:
 
           if [ -n "$DL1_PEER_ID" ] && [ "$DL1_PEER_ID" != "null" ]; then
             for host in node2 node3; do
-              ssh $host "curl -sf -X POST http://127.0.0.1:9402/cluster/join \
+              ssh $host "docker exec dl1 curl -sf -X POST http://127.0.0.1:9402/cluster/join \
                 -H 'Content-Type: application/json' \
                 -d '{\"id\": \"${DL1_PEER_ID}\", \"ip\": \"${NODE1_IP}\", \"p2pPort\": 9401}'" || true
             done
