@@ -117,6 +117,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [setup, metagraph, services, monitoring]
     if: always() && (needs.metagraph.result == 'success' || needs.services.result == 'success')
+    permissions:
+      contents: write
     
     steps:
       - name: Compute target branch
@@ -131,6 +133,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.target.outputs.branch }}
+          token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Install yq
         run: |
