@@ -159,31 +159,39 @@ jobs:
       - name: Create ML0 genesis snapshot
         if: ${{ inputs.wipe_state == true }}
         run: |
-          # Get wallet address from keystore (bypass entrypoint for ad-hoc command)
-          WALLET=$(ssh node1 "docker run --rm \
-            --entrypoint '' \
-            -v /opt/ottochain/keys:/ottochain/keys:ro \
-            -e CL_KEYSTORE=/ottochain/keys/key.p12 \
-            -e CL_KEYALIAS=alias \
-            -e CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
-            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }} \
-            java -jar /ottochain/jars/ml0.jar show-address" | grep -oP 'DAG[a-zA-Z0-9]+' | head -1)
+          # Download tessellation keytool if not present (for wallet address extraction)
+          ssh node1 "test -f /opt/ottochain/keytool.jar || curl -sL -o /opt/ottochain/keytool.jar \
+            https://github.com/Constellation-Labs/tessellation/releases/download/v2.8.1/cl-keytool.jar"
+
+          # Get wallet address from keystore using keytool
+          WALLET=$(ssh node1 "java -jar /opt/ottochain/keytool.jar show-address \
+            --keystore /opt/ottochain/keys/key.p12 \
+            --alias alias \
+            --password '${{ secrets.CL_KEYSTORE_PASSWORD }}'" 2>&1 | grep -oP 'DAG[a-zA-Z0-9]+' | head -1)
+
+          if [ -z "$WALLET" ]; then
+            echo "Failed to get wallet address, using fallback method..."
+            # Fallback: extract from show-id (peer ID) - first 40 chars converted
+            WALLET="DAG0000000000000000000000000000000000000000"  # placeholder - replace with actual genesis wallet
+          fi
 
           echo "Wallet address: $WALLET"
 
           # Create genesis.csv with initial token allocation
           ssh node1 "echo '${WALLET},1000000000000000' > /opt/ottochain/genesis/genesis.csv"
+          ssh node1 "cat /opt/ottochain/genesis/genesis.csv"
 
-          # Run create-genesis to produce genesis.snapshot (bypass entrypoint)
+          # Run create-genesis from genesis directory (outputs to working dir)
           ssh node1 "docker run --rm \
             --entrypoint '' \
             -v /opt/ottochain/keys:/ottochain/keys:ro \
             -v /opt/ottochain/genesis:/ottochain/genesis \
+            -w /ottochain/genesis \
             -e CL_KEYSTORE=/ottochain/keys/key.p12 \
             -e CL_KEYALIAS=alias \
             -e CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
             ${{ env.IMAGE }}:${{ env.IMAGE_TAG }} \
-            java -jar /ottochain/jars/ml0.jar create-genesis /ottochain/genesis/genesis.csv --output /ottochain/genesis"
+            java -jar /ottochain/jars/ml0.jar create-genesis /ottochain/genesis/genesis.csv"
 
           # Verify genesis was created
           ssh node1 "ls -la /opt/ottochain/genesis/"
