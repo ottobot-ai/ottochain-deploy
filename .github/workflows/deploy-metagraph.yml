@@ -143,9 +143,29 @@ jobs:
           echo ""
           echo "All keys verified. L1 consensus should work."
 
+      - name: Detect if genesis is needed
+        id: genesis-check
+        run: |
+          # Genesis is required if:
+          # 1. wipe_state is explicitly true, OR
+          # 2. genesis.address doesn't exist (fresh deploy / no prior genesis)
+          WIPE="${{ inputs.wipe_state }}"
+          if [ "$WIPE" = "true" ]; then
+            echo "needs_genesis=true" >> $GITHUB_OUTPUT
+            echo "Genesis required: wipe_state=true"
+          elif ! ssh node1 'test -f /opt/ottochain/genesis/genesis.address' 2>/dev/null; then
+            echo "needs_genesis=true" >> $GITHUB_OUTPUT
+            echo "Genesis required: genesis.address not found"
+          else
+            echo "needs_genesis=false" >> $GITHUB_OUTPUT
+            echo "Genesis not required: existing genesis.address found"
+            ssh node1 'cat /opt/ottochain/genesis/genesis.address'
+          fi
+
       - name: Wipe state
         if: ${{ inputs.wipe_state == true }}
         run: |
+          # Only wipe when explicitly requested (not just because genesis is missing)
           for host in node1 node2 node3; do
             ssh $host 'rm -rf /opt/ottochain/data/* /opt/ottochain/genesis/*'
             ssh $host 'mkdir -p /opt/ottochain/{data,keys,genesis}'
@@ -162,7 +182,7 @@ jobs:
       # - ML0 create-genesis requires GL0 to be running
       
       - name: Create GL0 genesis file
-        if: ${{ inputs.wipe_state == true }}
+        if: ${{ steps.genesis-check.outputs.needs_genesis == 'true' }}
         run: |
           # Download cl-wallet.jar for wallet address extraction
           ssh node1 "test -f /opt/ottochain/cl-wallet.jar || curl -sL -o /opt/ottochain/cl-wallet.jar \
@@ -330,7 +350,7 @@ jobs:
 
       # In tessellation v4.x, create-genesis requires GL0 to be running
       - name: Create ML0 genesis snapshot
-        if: ${{ inputs.wipe_state == true }}
+        if: ${{ steps.genesis-check.outputs.needs_genesis == 'true' }}
         run: |
           NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
           GL0_PEER_ID="${{ steps.start-gl0.outputs.gl0_peer_id }}"
@@ -395,7 +415,7 @@ jobs:
           # 1. run-genesis requires genesis snapshot as positional argument
           # 2. ALL config must be via env vars (CLI flags alone are not enough)
           # Bypass entrypoint and run JAR directly with full env var config
-          if [ "${{ inputs.wipe_state }}" = "true" ]; then
+          if [ "${{ steps.genesis-check.outputs.needs_genesis }}" = "true" ]; then
             ssh node1 "docker run -d --name ml0 \
               --restart unless-stopped \
               --entrypoint '' \
