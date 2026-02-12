@@ -248,25 +248,27 @@ jobs:
           NODE3_IP="${{ secrets.HETZNER_NODE3_IP }}"
           GL0_PEER_ID="${{ steps.start-gl0.outputs.gl0_peer_id }}"
 
-          for host_info in "node2:${NODE2_IP}" "node3:${NODE3_IP}"; do
+          # CRITICAL: Each node needs a DIFFERENT key for consensus
+          # node2 uses keys2, node3 uses keys3
+          for host_info in "node2:${NODE2_IP}:keys2" "node3:${NODE3_IP}:keys3"; do
             HOST="${host_info%%:*}"
-            IP="${host_info##*:}"
+            rest="${host_info#*:}"
+            IP="${rest%%:*}"
+            KEYS="${rest##*:}"
 
-            ssh $HOST << EOF
-          docker run -d --name gl0 \
-            --restart unless-stopped \
-            -p 9000:9000 -p 9001:9001 -p 9002:9002 \
-            -v /opt/ottochain/keys:/ottochain/keys:ro \
-            -v /opt/ottochain/data:/ottochain/data \
-            -e LAYER=gl0 \
-            -e RUN_MODE=run-validator \
-            -e CL_APP_ENV=dev \
-            -e CL_EXTERNAL_IP=${IP} \
-            -e CL_COLLATERAL=0 \
-            -e CL_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }} \
-            -e JAVA_OPTS="-Xmx8g -Xms4g" \
-            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}
-          EOF
+            ssh $HOST "docker run -d --name gl0 \
+              --restart unless-stopped \
+              -p 9000:9000 -p 9001:9001 -p 9002:9002 \
+              -v /opt/ottochain/${KEYS}:/ottochain/keys:ro \
+              -v /opt/ottochain/data:/ottochain/data \
+              -e LAYER=gl0 \
+              -e RUN_MODE=run-validator \
+              -e CL_APP_ENV=dev \
+              -e CL_EXTERNAL_IP=${IP} \
+              -e CL_COLLATERAL=0 \
+              -e CL_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }} \
+              -e JAVA_OPTS='-Xmx8g -Xms4g' \
+              ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
           done
 
           sleep 20
@@ -343,27 +345,29 @@ jobs:
 
           GL1_PEER_ID=$(ssh node1 'curl -sf http://localhost:9100/node/info | jq -r .id' || echo "")
 
-          for host_info in "node2:${NODE2_IP}" "node3:${NODE3_IP}"; do
+          # CRITICAL: Each node needs a DIFFERENT key for consensus
+          # node2 uses keys2, node3 uses keys3
+          for host_info in "node2:${NODE2_IP}:keys2" "node3:${NODE3_IP}:keys3"; do
             HOST="${host_info%%:*}"
-            IP="${host_info##*:}"
-            ssh $HOST << EOF
-          docker run -d --name gl1 \
-            --restart unless-stopped \
-            -p 9100:9100 -p 9101:9101 -p 9102:9102 \
-            -v /opt/ottochain/keys:/ottochain/keys:ro \
-            -v /opt/ottochain/data:/ottochain/data \
-            -e LAYER=gl1 \
-            -e RUN_MODE=run-validator \
-            -e CL_APP_ENV=dev \
-            -e CL_EXTERNAL_IP=${IP} \
-            -e CL_COLLATERAL=0 \
-            -e CL_L0_PEER_ID=${GL0_PEER_ID} \
-            -e CL_L0_PEER_HOST=${NODE1_IP} \
-            -e CL_L0_PEER_PORT=9000 \
-            -e CL_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }} \
-            -e JAVA_OPTS="-Xmx4g -Xms2g" \
-            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}
-          EOF
+            rest="${host_info#*:}"
+            IP="${rest%%:*}"
+            KEYS="${rest##*:}"
+            ssh $HOST "docker run -d --name gl1 \
+              --restart unless-stopped \
+              -p 9100:9100 -p 9101:9101 -p 9102:9102 \
+              -v /opt/ottochain/${KEYS}:/ottochain/keys:ro \
+              -v /opt/ottochain/data:/ottochain/data \
+              -e LAYER=gl1 \
+              -e RUN_MODE=run-validator \
+              -e CL_APP_ENV=dev \
+              -e CL_EXTERNAL_IP=${IP} \
+              -e CL_COLLATERAL=0 \
+              -e CL_L0_PEER_ID=${GL0_PEER_ID} \
+              -e CL_L0_PEER_HOST=${NODE1_IP} \
+              -e CL_L0_PEER_PORT=9000 \
+              -e CL_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }} \
+              -e JAVA_OPTS='-Xmx4g -Xms2g' \
+              ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
           done
 
           sleep 20
@@ -536,14 +540,18 @@ jobs:
           echo "token_id=$TOKEN_ID" >> "$GITHUB_OUTPUT"
           echo "Token ID: $TOKEN_ID"
           
-          for host_info in "node2:${NODE2_IP}" "node3:${NODE3_IP}"; do
+          # CRITICAL: Each node needs a DIFFERENT key for consensus
+          # node2 uses keys2, node3 uses keys3
+          for host_info in "node2:${NODE2_IP}:keys2" "node3:${NODE3_IP}:keys3"; do
             HOST="${host_info%%:*}"
-            IP="${host_info##*:}"
+            rest="${host_info#*:}"
+            IP="${rest%%:*}"
+            KEYS="${rest##*:}"
             ssh $HOST "docker run -d --name ml0 \
               --restart unless-stopped \
               --entrypoint '' \
               -p 9200:9200 -p 9201:9201 -p 9202:9202 \
-              -v /opt/ottochain/keys:/ottochain/keys:ro \
+              -v /opt/ottochain/${KEYS}:/ottochain/keys:ro \
               -v /opt/ottochain/data:/ottochain/data \
               -e CL_KEYSTORE=/ottochain/keys/key.p12 \
               -e CL_KEYALIAS=alias \
