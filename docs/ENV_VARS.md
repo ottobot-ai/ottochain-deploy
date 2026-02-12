@@ -7,10 +7,10 @@ This document lists all environment variables used by the OttoChain services sta
 | Secret | Description | Example |
 |--------|-------------|---------|
 | `HETZNER_SSH_KEY` | SSH private key for Hetzner servers | `-----BEGIN OPENSSH...` |
-| `HETZNER_NODE1_IP` | IP of node1 (metagraph layers) | `5.78.90.207` |
-| `HETZNER_SERVICES_IP` | IP of services server | `5.78.121.248` |
+| `HETZNER_NODE1_IP` | IP of node1 (metagraph layers) | `x.x.x.x` |
+| `HETZNER_SERVICES_IP` | IP of services server | `x.x.x.x` |
 | `POSTGRES_PASSWORD` | PostgreSQL password | `secure-password` |
-| `METAGRAPH_ID` | DAG address of the metagraph | `DAG1iYz4smL7vE1...` |
+| `METAGRAPH_ID` | *(auto-fetched from node1)* | Generated at metagraph build |
 | `TELEGRAM_ALERT_BOT_TOKEN` | Telegram bot token for alerts | `123456:ABC...` |
 | `TELEGRAM_ALERT_CHAT_ID` | Telegram chat ID for alerts | `-100123456789` |
 

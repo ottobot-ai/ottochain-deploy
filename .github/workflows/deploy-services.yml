@@ -63,6 +63,12 @@ jobs:
             User root
             IdentityFile ~/.ssh/hetzner
             StrictHostKeyChecking no
+          
+          Host node1
+            HostName ${{ secrets.HETZNER_NODE1_IP }}
+            User root
+            IdentityFile ~/.ssh/hetzner
+            StrictHostKeyChecking no
           EOF
 
       - name: Prepare remote directory
@@ -265,6 +271,14 @@ jobs:
           METAGRAPH_IP="${{ secrets.HETZNER_NODE1_IP }}"
           SERVICES_VERSION="${{ inputs.services_version || 'latest' }}"
           EXPLORER_VERSION="${{ inputs.explorer_version || 'latest' }}"
+          
+          # Fetch metagraph ID from node1 (generated at metagraph build time)
+          METAGRAPH_ID=$(ssh node1 "cat /opt/ottochain/genesis/genesis.address 2>/dev/null" || echo "")
+          if [ -z "$METAGRAPH_ID" ]; then
+            echo "⚠️ Could not fetch METAGRAPH_ID from node1, GL0 confirmations will be disabled"
+          else
+            echo "✓ Fetched METAGRAPH_ID: $METAGRAPH_ID"
+          fi
 
           ssh services "cat > /opt/ottochain-services/.env" << ENVFILE
           # OttoChain Services Environment
@@ -283,8 +297,8 @@ jobs:
           # Redis (must be explicit - compose defaults don't always apply)
           REDIS_URL=redis://redis:6379
 
-          # Metagraph identification (used for GL0 confirmation checking)
-          METAGRAPH_ID=${{ secrets.METAGRAPH_ID }}
+          # Metagraph identification (fetched from node1 genesis, used for GL0 confirmation checking)
+          METAGRAPH_ID=${METAGRAPH_ID}
 
           # Metagraph endpoints
           METAGRAPH_ML0_URL=http://${METAGRAPH_IP}:9200
