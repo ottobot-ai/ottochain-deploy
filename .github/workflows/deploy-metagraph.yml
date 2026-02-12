@@ -549,6 +549,15 @@ jobs:
           echo "token_id=$TOKEN_ID" >> "$GITHUB_OUTPUT"
           echo "Token ID: $TOKEN_ID"
           
+          # Wipe ML0-specific data directories on node2/node3 before starting validators
+          # They should sync fresh from node1, not inherit stale/partial state from failed syncs
+          # Use a dedicated ml0-data directory to avoid affecting GL0/GL1
+          echo "Preparing clean ML0 data directories on node2/node3..."
+          for host in node2 node3; do
+            ssh $host 'rm -rf /opt/ottochain/ml0-data && mkdir -p /opt/ottochain/ml0-data && sync'
+            echo "✓ $host ML0 data directory prepared"
+          done
+
           # CRITICAL: Each node needs a DIFFERENT key for consensus
           # node2 uses keys2, node3 uses keys3
           for host_info in "node2:${NODE2_IP}:keys2" "node3:${NODE3_IP}:keys3"; do
@@ -561,7 +570,7 @@ jobs:
               --entrypoint '' \
               -p 9200:9200 -p 9201:9201 -p 9202:9202 \
               -v /opt/ottochain/${KEYS}:/ottochain/keys:ro \
-              -v /opt/ottochain/data:/ottochain/data \
+              -v /opt/ottochain/ml0-data:/ottochain/data \
               -e CL_KEYSTORE=/ottochain/keys/key.p12 \
               -e CL_KEYALIAS=alias \
               -e CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
