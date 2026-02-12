@@ -299,15 +299,24 @@ jobs:
             sleep 5
           done
 
-          # Verify all GL0 nodes are Ready
+          # Verify all GL0 nodes are Ready (with retries - nodes may still be syncing)
           echo "Verifying all GL0 nodes are Ready..."
           for host in node1 node2 node3; do
-            STATE=$(ssh $host 'curl -sf http://localhost:9000/node/info | jq -r .state' || echo "DOWN")
-            echo "GL0 $host: $STATE"
-            if [ "$STATE" != "Ready" ]; then
-              echo "::error::GL0 on $host is $STATE, expected Ready"
-              exit 1
-            fi
+            echo "Waiting for GL0 on $host to reach Ready..."
+            for attempt in $(seq 1 60); do
+              STATE=$(ssh $host 'curl -sf http://localhost:9000/node/info | jq -r .state' || echo "DOWN")
+              echo "GL0 $host: $STATE (attempt $attempt/60)"
+              if [ "$STATE" = "Ready" ]; then
+                echo "✓ GL0 $host is Ready"
+                break
+              fi
+              if [ "$attempt" = "60" ]; then
+                echo "::error::GL0 on $host failed to reach Ready after 5 minutes (state: $STATE)"
+                ssh $host 'docker logs gl0 2>&1 | tail -30' || true
+                exit 1
+              fi
+              sleep 5
+            done
           done
           echo "✅ GL0 cluster fully operational (3/3 Ready)"
 
@@ -632,18 +641,26 @@ jobs:
             sleep 5
           done
 
-          # Verify all ML0 nodes are Ready
+          # Verify all ML0 nodes are Ready (with retries - nodes may still be syncing)
           echo "Verifying all ML0 nodes are Ready..."
           for host in node1 node2 node3; do
-            STATE=$(ssh $host 'curl -sf http://localhost:9200/node/info | jq -r .state' || echo "DOWN")
-            echo "ML0 $host: $STATE"
-            if [ "$STATE" != "Ready" ]; then
-              echo "::warning::ML0 on $host is $STATE, expected Ready"
-              # Log last 30 lines for debugging
-              ssh $host 'docker logs ml0 2>&1 | tail -30'
-            fi
+            echo "Waiting for ML0 on $host to reach Ready..."
+            for attempt in $(seq 1 60); do
+              STATE=$(ssh $host 'curl -sf http://localhost:9200/node/info | jq -r .state' || echo "DOWN")
+              echo "ML0 $host: $STATE (attempt $attempt/60)"
+              if [ "$STATE" = "Ready" ]; then
+                echo "✓ ML0 $host is Ready"
+                break
+              fi
+              if [ "$attempt" = "60" ]; then
+                echo "::error::ML0 on $host failed to reach Ready after 5 minutes (state: $STATE)"
+                ssh $host 'docker logs ml0 2>&1 | tail -30' || true
+                exit 1
+              fi
+              sleep 5
+            done
           done
-          echo "✅ ML0 cluster operational"
+          echo "✅ ML0 cluster fully operational (3/3 Ready)"
 
       - name: Start CL1
         run: |
