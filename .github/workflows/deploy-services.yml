@@ -340,12 +340,11 @@ jobs:
           # Restart services to pick up clean state
           docker compose restart gateway bridge indexer monitor || true
           
-          echo "✓ Services deployed and ready"
-          MIGRATE_SCRIPT
-          
           # Show status
           docker compose ps
-          DEPLOY_SCRIPT
+          
+          echo "✓ Services deployed and ready"
+          MIGRATE_SCRIPT
 
       - name: Update nginx config
         run: |
