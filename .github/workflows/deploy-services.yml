@@ -90,6 +90,8 @@ jobs:
                 - DATABASE_URL=${DATABASE_URL}
                 - METAGRAPH_ML0_URL=${METAGRAPH_ML0_URL}
                 - METAGRAPH_DL1_URL=${METAGRAPH_DL1_URL}
+                - GL0_URL=${GL0_URL}
+                - METAGRAPH_ID=${METAGRAPH_ID}
                 - REDIS_URL=${REDIS_URL:-redis://redis:6379}
               depends_on:
                 - redis
@@ -113,6 +115,8 @@ jobs:
                 - DATABASE_URL=${DATABASE_URL}
                 - METAGRAPH_ML0_URL=${METAGRAPH_ML0_URL}
                 - METAGRAPH_DL1_URL=${METAGRAPH_DL1_URL}
+                - GL0_URL=${GL0_URL}
+                - METAGRAPH_ID=${METAGRAPH_ID}
                 - REDIS_URL=${REDIS_URL:-redis://redis:6379}
               depends_on:
                 - redis
@@ -136,10 +140,14 @@ jobs:
                 - DATABASE_URL=${DATABASE_URL}
                 - METAGRAPH_ML0_URL=${METAGRAPH_ML0_URL}
                 - METAGRAPH_DL1_URL=${METAGRAPH_DL1_URL}
+                - GL0_URL=${GL0_URL}
+                - METAGRAPH_ID=${METAGRAPH_ID}
+                - REDIS_URL=${REDIS_URL:-redis://redis:6379}
                 - INDEXER_PORT=3031
                 - INDEXER_CALLBACK_URL=${INDEXER_CALLBACK_URL:-http://indexer:3031/webhook/snapshot}
               depends_on:
                 - postgres
+                - redis
               networks:
                 - ottochain
               healthcheck:
@@ -160,6 +168,8 @@ jobs:
                 - DATABASE_URL=${DATABASE_URL}
                 - METAGRAPH_ML0_URL=${METAGRAPH_ML0_URL}
                 - METAGRAPH_DL1_URL=${METAGRAPH_DL1_URL}
+                - GL0_URL=${GL0_URL}
+                - METAGRAPH_ID=${METAGRAPH_ID}
                 - REDIS_URL=${REDIS_URL:-redis://redis:6379}
               depends_on:
                 - redis
@@ -179,7 +189,9 @@ jobs:
                 - SERVICE=traffic-generator
                 - NODE_ENV=production
                 - BRIDGE_URL=http://bridge:3030
+                - METAGRAPH_ML0_URL=${METAGRAPH_ML0_URL}
                 - ML0_URL=${METAGRAPH_ML0_URL}
+                - GL0_URL=${GL0_URL}
                 - INDEXER_URL=http://indexer:3031
                 - TRAFFIC_INTERVAL=${TRAFFIC_INTERVAL:-5000}
                 - TRAFFIC_BATCH_SIZE=${TRAFFIC_BATCH_SIZE:-3}
@@ -270,6 +282,9 @@ jobs:
 
           # Redis (must be explicit - compose defaults don't always apply)
           REDIS_URL=redis://redis:6379
+
+          # Metagraph identification (used for GL0 confirmation checking)
+          METAGRAPH_ID=${{ secrets.METAGRAPH_ID }}
 
           # Metagraph endpoints
           METAGRAPH_ML0_URL=http://${METAGRAPH_IP}:9200
