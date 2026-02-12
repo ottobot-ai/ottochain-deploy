@@ -63,6 +63,12 @@ jobs:
             User root
             IdentityFile ~/.ssh/hetzner
             StrictHostKeyChecking no
+          
+          Host node1
+            HostName ${{ secrets.HETZNER_NODE1_IP }}
+            User root
+            IdentityFile ~/.ssh/hetzner
+            StrictHostKeyChecking no
           EOF
 
       - name: Prepare remote directory
@@ -90,6 +96,8 @@ jobs:
                 - DATABASE_URL=${DATABASE_URL}
                 - METAGRAPH_ML0_URL=${METAGRAPH_ML0_URL}
                 - METAGRAPH_DL1_URL=${METAGRAPH_DL1_URL}
+                - GL0_URL=${GL0_URL}
+                - METAGRAPH_ID=${METAGRAPH_ID}
                 - REDIS_URL=${REDIS_URL:-redis://redis:6379}
               depends_on:
                 - redis
@@ -113,6 +121,8 @@ jobs:
                 - DATABASE_URL=${DATABASE_URL}
                 - METAGRAPH_ML0_URL=${METAGRAPH_ML0_URL}
                 - METAGRAPH_DL1_URL=${METAGRAPH_DL1_URL}
+                - GL0_URL=${GL0_URL}
+                - METAGRAPH_ID=${METAGRAPH_ID}
                 - REDIS_URL=${REDIS_URL:-redis://redis:6379}
               depends_on:
                 - redis
@@ -136,10 +146,14 @@ jobs:
                 - DATABASE_URL=${DATABASE_URL}
                 - METAGRAPH_ML0_URL=${METAGRAPH_ML0_URL}
                 - METAGRAPH_DL1_URL=${METAGRAPH_DL1_URL}
+                - GL0_URL=${GL0_URL}
+                - METAGRAPH_ID=${METAGRAPH_ID}
+                - REDIS_URL=${REDIS_URL:-redis://redis:6379}
                 - INDEXER_PORT=3031
                 - INDEXER_CALLBACK_URL=${INDEXER_CALLBACK_URL:-http://indexer:3031/webhook/snapshot}
               depends_on:
                 - postgres
+                - redis
               networks:
                 - ottochain
               healthcheck:
@@ -160,6 +174,8 @@ jobs:
                 - DATABASE_URL=${DATABASE_URL}
                 - METAGRAPH_ML0_URL=${METAGRAPH_ML0_URL}
                 - METAGRAPH_DL1_URL=${METAGRAPH_DL1_URL}
+                - GL0_URL=${GL0_URL}
+                - METAGRAPH_ID=${METAGRAPH_ID}
                 - REDIS_URL=${REDIS_URL:-redis://redis:6379}
               depends_on:
                 - redis
@@ -179,7 +195,9 @@ jobs:
                 - SERVICE=traffic-generator
                 - NODE_ENV=production
                 - BRIDGE_URL=http://bridge:3030
+                - METAGRAPH_ML0_URL=${METAGRAPH_ML0_URL}
                 - ML0_URL=${METAGRAPH_ML0_URL}
+                - GL0_URL=${GL0_URL}
                 - INDEXER_URL=http://indexer:3031
                 - TRAFFIC_INTERVAL=${TRAFFIC_INTERVAL:-5000}
                 - TRAFFIC_BATCH_SIZE=${TRAFFIC_BATCH_SIZE:-3}
@@ -253,6 +271,14 @@ jobs:
           METAGRAPH_IP="${{ secrets.HETZNER_NODE1_IP }}"
           SERVICES_VERSION="${{ inputs.services_version || 'latest' }}"
           EXPLORER_VERSION="${{ inputs.explorer_version || 'latest' }}"
+          
+          # Fetch metagraph ID from node1 (generated at metagraph build time)
+          METAGRAPH_ID=$(ssh node1 "cat /opt/ottochain/genesis/genesis.address 2>/dev/null" || echo "")
+          if [ -z "$METAGRAPH_ID" ]; then
+            echo "⚠️ Could not fetch METAGRAPH_ID from node1, GL0 confirmations will be disabled"
+          else
+            echo "✓ Fetched METAGRAPH_ID: $METAGRAPH_ID"
+          fi
 
           ssh services "cat > /opt/ottochain-services/.env" << ENVFILE
           # OttoChain Services Environment
@@ -270,6 +296,9 @@ jobs:
 
           # Redis (must be explicit - compose defaults don't always apply)
           REDIS_URL=redis://redis:6379
+
+          # Metagraph identification (fetched from node1 genesis, used for GL0 confirmation checking)
+          METAGRAPH_ID=${METAGRAPH_ID}
 
           # Metagraph endpoints
           METAGRAPH_ML0_URL=http://${METAGRAPH_IP}:9200
