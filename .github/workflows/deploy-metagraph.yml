@@ -248,25 +248,27 @@ jobs:
           NODE3_IP="${{ secrets.HETZNER_NODE3_IP }}"
           GL0_PEER_ID="${{ steps.start-gl0.outputs.gl0_peer_id }}"
 
-          for host_info in "node2:${NODE2_IP}" "node3:${NODE3_IP}"; do
+          # CRITICAL: Each node needs a DIFFERENT key for consensus
+          # node2 uses keys2, node3 uses keys3
+          for host_info in "node2:${NODE2_IP}:keys2" "node3:${NODE3_IP}:keys3"; do
             HOST="${host_info%%:*}"
-            IP="${host_info##*:}"
+            rest="${host_info#*:}"
+            IP="${rest%%:*}"
+            KEYS="${rest##*:}"
 
-            ssh $HOST << EOF
-          docker run -d --name gl0 \
-            --restart unless-stopped \
-            -p 9000:9000 -p 9001:9001 -p 9002:9002 \
-            -v /opt/ottochain/keys:/ottochain/keys:ro \
-            -v /opt/ottochain/data:/ottochain/data \
-            -e LAYER=gl0 \
-            -e RUN_MODE=run-validator \
-            -e CL_APP_ENV=dev \
-            -e CL_EXTERNAL_IP=${IP} \
-            -e CL_COLLATERAL=0 \
-            -e CL_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }} \
-            -e JAVA_OPTS="-Xmx8g -Xms4g" \
-            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}
-          EOF
+            ssh $HOST "docker run -d --name gl0 \
+              --restart unless-stopped \
+              -p 9000:9000 -p 9001:9001 -p 9002:9002 \
+              -v /opt/ottochain/${KEYS}:/ottochain/keys:ro \
+              -v /opt/ottochain/data:/ottochain/data \
+              -e LAYER=gl0 \
+              -e RUN_MODE=run-validator \
+              -e CL_APP_ENV=dev \
+              -e CL_EXTERNAL_IP=${IP} \
+              -e CL_COLLATERAL=0 \
+              -e CL_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }} \
+              -e JAVA_OPTS='-Xmx8g -Xms4g' \
+              ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
           done
 
           sleep 20
@@ -279,7 +281,35 @@ jobs:
           done
 
           sleep 15
-          echo "GL0 cluster size: $(ssh node1 'curl -sf http://localhost:9000/cluster/info | jq length')"
+
+          # CRITICAL: Wait for GL0 cluster to be fully operational before proceeding
+          # ML0 and all L1 layers depend on GL0 being stable
+          echo "Waiting for GL0 cluster to reach 3 nodes..."
+          for i in $(seq 1 60); do
+            CLUSTER_SIZE=$(ssh node1 'curl -sf http://localhost:9000/cluster/info | jq length' || echo "0")
+            echo "GL0 cluster size: $CLUSTER_SIZE (attempt $i/60)"
+            if [ "$CLUSTER_SIZE" -ge 3 ]; then
+              echo "✓ GL0 cluster has $CLUSTER_SIZE nodes"
+              break
+            fi
+            if [ "$i" = "60" ]; then
+              echo "::error::GL0 cluster failed to reach 3 nodes after 5 minutes"
+              exit 1
+            fi
+            sleep 5
+          done
+
+          # Verify all GL0 nodes are Ready
+          echo "Verifying all GL0 nodes are Ready..."
+          for host in node1 node2 node3; do
+            STATE=$(ssh $host 'curl -sf http://localhost:9000/node/info | jq -r .state' || echo "DOWN")
+            echo "GL0 $host: $STATE"
+            if [ "$STATE" != "Ready" ]; then
+              echo "::error::GL0 on $host is $STATE, expected Ready"
+              exit 1
+            fi
+          done
+          echo "✅ GL0 cluster fully operational (3/3 Ready)"
 
       - name: Start GL1
         run: |
@@ -315,27 +345,29 @@ jobs:
 
           GL1_PEER_ID=$(ssh node1 'curl -sf http://localhost:9100/node/info | jq -r .id' || echo "")
 
-          for host_info in "node2:${NODE2_IP}" "node3:${NODE3_IP}"; do
+          # CRITICAL: Each node needs a DIFFERENT key for consensus
+          # node2 uses keys2, node3 uses keys3
+          for host_info in "node2:${NODE2_IP}:keys2" "node3:${NODE3_IP}:keys3"; do
             HOST="${host_info%%:*}"
-            IP="${host_info##*:}"
-            ssh $HOST << EOF
-          docker run -d --name gl1 \
-            --restart unless-stopped \
-            -p 9100:9100 -p 9101:9101 -p 9102:9102 \
-            -v /opt/ottochain/keys:/ottochain/keys:ro \
-            -v /opt/ottochain/data:/ottochain/data \
-            -e LAYER=gl1 \
-            -e RUN_MODE=run-validator \
-            -e CL_APP_ENV=dev \
-            -e CL_EXTERNAL_IP=${IP} \
-            -e CL_COLLATERAL=0 \
-            -e CL_L0_PEER_ID=${GL0_PEER_ID} \
-            -e CL_L0_PEER_HOST=${NODE1_IP} \
-            -e CL_L0_PEER_PORT=9000 \
-            -e CL_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }} \
-            -e JAVA_OPTS="-Xmx4g -Xms2g" \
-            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}
-          EOF
+            rest="${host_info#*:}"
+            IP="${rest%%:*}"
+            KEYS="${rest##*:}"
+            ssh $HOST "docker run -d --name gl1 \
+              --restart unless-stopped \
+              -p 9100:9100 -p 9101:9101 -p 9102:9102 \
+              -v /opt/ottochain/${KEYS}:/ottochain/keys:ro \
+              -v /opt/ottochain/data:/ottochain/data \
+              -e LAYER=gl1 \
+              -e RUN_MODE=run-validator \
+              -e CL_APP_ENV=dev \
+              -e CL_EXTERNAL_IP=${IP} \
+              -e CL_COLLATERAL=0 \
+              -e CL_L0_PEER_ID=${GL0_PEER_ID} \
+              -e CL_L0_PEER_HOST=${NODE1_IP} \
+              -e CL_L0_PEER_PORT=9000 \
+              -e CL_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }} \
+              -e JAVA_OPTS='-Xmx4g -Xms2g' \
+              ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
           done
 
           sleep 20
@@ -353,6 +385,16 @@ jobs:
         if: ${{ steps.genesis-check.outputs.needs_genesis == 'true' }}
         run: |
           NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
+          
+          # Clean ML0 data directories on ALL nodes before genesis
+          # This prevents ordinal collisions from partial prior runs
+          echo "Cleaning ML0 data directories on all nodes..."
+          for host in node1 node2 node3; do
+            ssh $host 'rm -rf /opt/ottochain/data/ml0 /opt/ottochain/data/cl1 /opt/ottochain/data/dl1 2>/dev/null || true'
+            ssh $host 'mkdir -p /opt/ottochain/data'
+            ssh $host 'sync'  # Force disk sync
+            echo "✓ $host ML0/CL1/DL1 data cleaned"
+          done
           GL0_PEER_ID="${{ steps.start-gl0.outputs.gl0_peer_id }}"
 
           # Download tessellation cl-wallet.jar v4.x if not present (has show-address/show-id commands)
@@ -399,9 +441,29 @@ jobs:
             ${{ env.IMAGE }}:${{ env.IMAGE_TAG }} \
             java -jar /ottochain/jars/ml0.jar create-genesis /ottochain/genesis/genesis.csv"
 
-          # Verify genesis was created
+          # Verify genesis was created successfully
+          echo "Verifying ML0 genesis files..."
+          if ! ssh node1 "test -f /opt/ottochain/genesis/genesis.snapshot"; then
+            echo "::error::genesis.snapshot not found - ML0 genesis creation failed"
+            exit 1
+          fi
+          if ! ssh node1 "test -f /opt/ottochain/genesis/genesis.address"; then
+            echo "::error::genesis.address not found - ML0 genesis creation failed"
+            exit 1
+          fi
           ssh node1 "ls -la /opt/ottochain/genesis/"
-          echo "✅ ML0 genesis snapshot created"
+          echo "Genesis address: $(ssh node1 'cat /opt/ottochain/genesis/genesis.address')"
+          
+          # Distribute genesis files to all nodes (validators need genesis.address for TOKEN_ID)
+          echo "Distributing genesis files to node2 and node3..."
+          for host in node2 node3; do
+            ssh $host "mkdir -p /opt/ottochain/genesis"
+            # Copy essential genesis files
+            ssh node1 'cat /opt/ottochain/genesis/genesis.address' | ssh $host 'cat > /opt/ottochain/genesis/genesis.address'
+            ssh node1 'cat /opt/ottochain/genesis/genesis.csv' | ssh $host 'cat > /opt/ottochain/genesis/genesis.csv'
+            echo "✓ Genesis files copied to $host"
+          done
+          echo "✅ ML0 genesis snapshot created, verified, and distributed"
 
       - name: Start ML0
         id: start-ml0
@@ -478,14 +540,18 @@ jobs:
           echo "token_id=$TOKEN_ID" >> "$GITHUB_OUTPUT"
           echo "Token ID: $TOKEN_ID"
           
-          for host_info in "node2:${NODE2_IP}" "node3:${NODE3_IP}"; do
+          # CRITICAL: Each node needs a DIFFERENT key for consensus
+          # node2 uses keys2, node3 uses keys3
+          for host_info in "node2:${NODE2_IP}:keys2" "node3:${NODE3_IP}:keys3"; do
             HOST="${host_info%%:*}"
-            IP="${host_info##*:}"
+            rest="${host_info#*:}"
+            IP="${rest%%:*}"
+            KEYS="${rest##*:}"
             ssh $HOST "docker run -d --name ml0 \
               --restart unless-stopped \
               --entrypoint '' \
               -p 9200:9200 -p 9201:9201 -p 9202:9202 \
-              -v /opt/ottochain/keys:/ottochain/keys:ro \
+              -v /opt/ottochain/${KEYS}:/ottochain/keys:ro \
               -v /opt/ottochain/data:/ottochain/data \
               -e CL_KEYSTORE=/ottochain/keys/key.p12 \
               -e CL_KEYALIAS=alias \
@@ -542,13 +608,42 @@ jobs:
             fi
           done
           
-          # Wait and verify cluster formed
-          sleep 10
-          ML0_CLUSTER_SIZE=$(ssh node1 'curl -sf http://localhost:9200/cluster/info | jq length' || echo "0")
-          echo "ML0 cluster size: $ML0_CLUSTER_SIZE"
-          if [ "$ML0_CLUSTER_SIZE" -lt 3 ]; then
-            echo "::warning::ML0 cluster has only $ML0_CLUSTER_SIZE nodes (expected 3)"
-          fi
+          # CRITICAL: Wait for ML0 cluster to be fully operational before proceeding
+          # CL1 and DL1 depend on ML0 being stable
+          echo "Waiting for ML0 cluster to reach 3 nodes..."
+          for i in $(seq 1 60); do
+            ML0_CLUSTER_SIZE=$(ssh node1 'curl -sf http://localhost:9200/cluster/info | jq length' || echo "0")
+            echo "ML0 cluster size: $ML0_CLUSTER_SIZE (attempt $i/60)"
+            if [ "$ML0_CLUSTER_SIZE" -ge 3 ]; then
+              echo "✓ ML0 cluster has $ML0_CLUSTER_SIZE nodes"
+              break
+            fi
+            if [ "$i" = "60" ]; then
+              echo "::error::ML0 cluster failed to reach 3 nodes after 5 minutes"
+              # Log node states for debugging
+              for host in node1 node2 node3; do
+                STATE=$(ssh $host 'curl -sf http://localhost:9200/node/info | jq -r .state' 2>/dev/null || echo "DOWN")
+                echo "ML0 $host: $STATE"
+                # Check for ordinal errors in logs
+                ssh $host 'docker logs ml0 2>&1 | tail -20 | grep -i "ordinal\|error" || true'
+              done
+              exit 1
+            fi
+            sleep 5
+          done
+
+          # Verify all ML0 nodes are Ready
+          echo "Verifying all ML0 nodes are Ready..."
+          for host in node1 node2 node3; do
+            STATE=$(ssh $host 'curl -sf http://localhost:9200/node/info | jq -r .state' || echo "DOWN")
+            echo "ML0 $host: $STATE"
+            if [ "$STATE" != "Ready" ]; then
+              echo "::warning::ML0 on $host is $STATE, expected Ready"
+              # Log last 30 lines for debugging
+              ssh $host 'docker logs ml0 2>&1 | tail -30'
+            fi
+          done
+          echo "✅ ML0 cluster operational"
 
       - name: Start CL1
         run: |
