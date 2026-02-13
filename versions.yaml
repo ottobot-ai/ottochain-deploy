@@ -8,32 +8,26 @@
 components:
   # Core metagraph (Scala) - the foundation
   ottochain: "0.5.0"
-  
   # TypeScript SDK - client library
   sdk: "0.2.1"
-  
   # Backend services (bridge, indexer, traffic-gen)
-  services: "0.1.0"
-  
+  services: "0.3.5"
   # Explorer UI
   explorer: "0.1.0"
-  
   # Monitoring stack (Grafana, Prometheus configs)
   monitoring: "0.1.0"
-
 # External dependencies
 dependencies:
   tessellation: "v4.0.0-rc.2"
   metakit: "main"
-
 # Deployment targets
 environments:
   scratch:
-    auto_deploy: true    # Deploy on versions.yaml merge
+    auto_deploy: true # Deploy on versions.yaml merge
     cluster: hetzner
   staging:
-    auto_deploy: false   # Manual promotion
+    auto_deploy: false # Manual promotion
     cluster: hetzner
   production:
-    auto_deploy: false   # Manual promotion
-    cluster: null        # TBD
+    auto_deploy: false # Manual promotion
+    cluster: null # TBD
