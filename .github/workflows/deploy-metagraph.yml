@@ -506,15 +506,15 @@ jobs:
             -e IS_INITIAL=true \
             -e CL_KEYSTORE=/ottochain/keys/key.p12 \
             -e CL_KEYALIAS=alias \
-            -e CL_PASSWORD='\${{ secrets.CL_KEYSTORE_PASSWORD }}' \
+            -e CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
             -e CL_APP_ENV=dev \
-            -e CL_EXTERNAL_IP=\${NODE1_IP} \
+            -e CL_EXTERNAL_IP=${NODE1_IP} \
             -e CL_COLLATERAL=0 \
-            -e CL_GLOBAL_L0_PEER_ID=\${GL0_PEER_ID} \
-            -e CL_GLOBAL_L0_PEER_HOST=\${NODE1_IP} \
+            -e CL_GLOBAL_L0_PEER_ID=${GL0_PEER_ID} \
+            -e CL_GLOBAL_L0_PEER_HOST=${NODE1_IP} \
             -e CL_GLOBAL_L0_PEER_PORT=9000 \
             -e JAVA_OPTS='-Xmx8g -Xms4g' \
-            \${{ env.IMAGE }}:\${{ env.IMAGE_TAG }}"
+            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
 
           echo "Waiting for ML0 to become Ready..."
           for i in $(seq 1 90); do
