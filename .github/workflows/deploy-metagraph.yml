@@ -511,8 +511,8 @@ jobs:
             -e CL_EXTERNAL_IP=${NODE1_IP} \
             -e CL_COLLATERAL=0 \
             -e CL_GLOBAL_L0_PEER_ID=${GL0_PEER_ID} \
-            -e CL_GLOBAL_L0_PEER_HOST=${NODE1_IP} \
-            -e CL_GLOBAL_L0_PEER_PORT=9000 \
+            -e CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP} \
+            -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
             -e JAVA_OPTS='-Xmx8g -Xms4g' \
             ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
 
@@ -567,8 +567,8 @@ jobs:
               -e CL_EXTERNAL_IP=${IP} \
               -e CL_COLLATERAL=0 \
               -e CL_GLOBAL_L0_PEER_ID=${GL0_PEER_ID} \
-              -e CL_GLOBAL_L0_PEER_HOST=${NODE1_IP} \
-              -e CL_GLOBAL_L0_PEER_PORT=9000 \
+              -e CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP} \
+              -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
               -e CL_TOKEN_ID=${TOKEN_ID} \
               -e JAVA_OPTS='-Xmx8g -Xms4g' \
               ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
@@ -684,8 +684,8 @@ jobs:
             -e CL_EXTERNAL_IP=${NODE1_IP} \
             -e CL_COLLATERAL=0 \
             -e CL_GLOBAL_L0_PEER_ID=${GL0_PEER_ID} \
-            -e CL_GLOBAL_L0_PEER_HOST=${NODE1_IP} \
-            -e CL_GLOBAL_L0_PEER_PORT=9000 \
+            -e CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP} \
+            -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
             -e CL_L0_PEER_ID=${ML0_PEER_ID} \
             -e CL_L0_PEER_HOST=${NODE1_IP} \
             -e CL_L0_PEER_PORT=9200 \
@@ -724,8 +724,8 @@ jobs:
               -e CL_EXTERNAL_IP=${IP} \
               -e CL_COLLATERAL=0 \
               -e CL_GLOBAL_L0_PEER_ID=${GL0_PEER_ID} \
-              -e CL_GLOBAL_L0_PEER_HOST=${NODE1_IP} \
-              -e CL_GLOBAL_L0_PEER_PORT=9000 \
+              -e CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP} \
+              -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
               -e CL_L0_PEER_ID=${ML0_PEER_ID} \
               -e CL_L0_PEER_HOST=${NODE1_IP} \
               -e CL_L0_PEER_PORT=9200 \
@@ -770,8 +770,8 @@ jobs:
             -e CL_EXTERNAL_IP=${NODE1_IP} \
             -e CL_COLLATERAL=0 \
             -e CL_GLOBAL_L0_PEER_ID=${GL0_PEER_ID} \
-            -e CL_GLOBAL_L0_PEER_HOST=${NODE1_IP} \
-            -e CL_GLOBAL_L0_PEER_PORT=9000 \
+            -e CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP} \
+            -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
             -e CL_L0_PEER_ID=${ML0_PEER_ID} \
             -e CL_L0_PEER_HOST=${NODE1_IP} \
             -e CL_L0_PEER_PORT=9200 \
@@ -810,8 +810,8 @@ jobs:
               -e CL_EXTERNAL_IP=${IP} \
               -e CL_COLLATERAL=0 \
               -e CL_GLOBAL_L0_PEER_ID=${GL0_PEER_ID} \
-              -e CL_GLOBAL_L0_PEER_HOST=${NODE1_IP} \
-              -e CL_GLOBAL_L0_PEER_PORT=9000 \
+              -e CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP} \
+              -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
               -e CL_L0_PEER_ID=${ML0_PEER_ID} \
               -e CL_L0_PEER_HOST=${NODE1_IP} \
               -e CL_L0_PEER_PORT=9200 \
