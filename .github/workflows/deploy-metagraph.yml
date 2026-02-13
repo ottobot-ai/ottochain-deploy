@@ -208,29 +208,26 @@ jobs:
         run: |
           NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
           
-          # In v4.x, run-genesis requires the genesis CSV as a positional argument
-          # We bypass the entrypoint and run the JAR directly with proper args
+          # Use entrypoint with IS_INITIAL=true - auto-detects run-genesis vs run-rollback
+          # Genesis file at /ottochain/genesis/gl0-genesis.csv is auto-discovered
           ssh node1 "docker run -d --name gl0 \
             --restart unless-stopped \
-            --entrypoint '' \
             --log-opt max-size=100m --log-opt max-file=3 \
             -p 9000:9000 -p 9001:9001 -p 9002:9002 \
             -v /opt/ottochain/keys:/ottochain/keys:ro \
             -v /opt/ottochain/gl0-data:/ottochain/data \
             -v /opt/ottochain/gl0-logs:/tessellation/logs \
             -v /opt/ottochain/genesis:/ottochain/genesis:ro \
+            -e LAYER=gl0 \
+            -e IS_INITIAL=true \
+            -e CL_APP_ENV=dev \
+            -e CL_EXTERNAL_IP=${NODE1_IP} \
+            -e CL_COLLATERAL=0 \
             -e CL_KEYSTORE=/ottochain/keys/key.p12 \
             -e CL_KEYALIAS=alias \
             -e CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
-            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }} \
-            java -Xmx8g -Xms4g -jar /ottochain/jars/gl0.jar run-genesis \
-              --env dev \
-              --ip ${NODE1_IP} \
-              --public-port 9000 \
-              --p2p-port 9001 \
-              --cli-port 9002 \
-              --collateral 0 \
-              /ottochain/genesis/gl0-genesis.csv"
+            -e JAVA_OPTS='-Xmx8g -Xms4g' \
+            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
 
           echo "Waiting for GL0 to become Ready..."
           for i in $(seq 1 90); do
@@ -262,6 +259,7 @@ jobs:
             IP="${rest%%:*}"
             KEYS="${rest##*:}"
 
+            # IS_INITIAL not set = auto-detects run-validator
             ssh $HOST "docker run -d --name gl0 \
               --restart unless-stopped \
               --log-opt max-size=100m --log-opt max-file=3 \
@@ -270,7 +268,6 @@ jobs:
               -v /opt/ottochain/gl0-data:/ottochain/data \
               -v /opt/ottochain/gl0-logs:/tessellation/logs \
               -e LAYER=gl0 \
-              -e RUN_MODE=run-validator \
               -e CL_APP_ENV=dev \
               -e CL_EXTERNAL_IP=${IP} \
               -e CL_COLLATERAL=0 \
@@ -335,6 +332,7 @@ jobs:
           NODE3_IP="${{ secrets.HETZNER_NODE3_IP }}"
           GL0_PEER_ID="${{ steps.start-gl0.outputs.gl0_peer_id }}"
 
+          # IS_INITIAL=true for first GL1 - auto-detects run-initial-validator vs run-validator
           ssh node1 << EOF
           docker run -d --name gl1 \
             --restart unless-stopped \
@@ -344,7 +342,7 @@ jobs:
             -v /opt/ottochain/gl1-data:/ottochain/data \
             -v /opt/ottochain/gl1-logs:/tessellation/logs \
             -e LAYER=gl1 \
-            -e RUN_MODE=run-initial-validator \
+            -e IS_INITIAL=true \
             -e CL_APP_ENV=dev \
             -e CL_EXTERNAL_IP=${NODE1_IP} \
             -e CL_COLLATERAL=0 \
@@ -371,6 +369,7 @@ jobs:
             rest="${host_info#*:}"
             IP="${rest%%:*}"
             KEYS="${rest##*:}"
+            # IS_INITIAL not set = auto-detects run-validator
             ssh $HOST "docker run -d --name gl1 \
               --restart unless-stopped \
               --log-opt max-size=100m --log-opt max-file=3 \
@@ -379,7 +378,6 @@ jobs:
               -v /opt/ottochain/gl1-data:/ottochain/data \
               -v /opt/ottochain/gl1-logs:/tessellation/logs \
               -e LAYER=gl1 \
-              -e RUN_MODE=run-validator \
               -e CL_APP_ENV=dev \
               -e CL_EXTERNAL_IP=${IP} \
               -e CL_COLLATERAL=0 \
@@ -494,57 +492,29 @@ jobs:
           NODE3_IP="${{ secrets.HETZNER_NODE3_IP }}"
           GL0_PEER_ID="${{ steps.start-gl0.outputs.gl0_peer_id }}"
 
-          # In tessellation v4.x:
-          # 1. run-genesis requires genesis snapshot as positional argument
-          # 2. ALL config must be via env vars (CLI flags alone are not enough)
-          # Bypass entrypoint and run JAR directly with full env var config
-          if [ "${{ steps.genesis-check.outputs.needs_genesis }}" = "true" ]; then
-            ssh node1 "docker run -d --name ml0 \
-              --restart unless-stopped \
-              --entrypoint '' \
-              --log-opt max-size=100m --log-opt max-file=3 \
-              -p 9200:9200 -p 9201:9201 -p 9202:9202 \
-              -v /opt/ottochain/keys:/ottochain/keys:ro \
-              -v /opt/ottochain/ml0-data:/ottochain/data \
-              -v /opt/ottochain/ml0-logs:/tessellation/logs \
-              -v /opt/ottochain/genesis:/ottochain/genesis:ro \
-              -e CL_KEYSTORE=/ottochain/keys/key.p12 \
-              -e CL_KEYALIAS=alias \
-              -e CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
-              -e CL_APP_ENV=dev \
-              -e CL_PUBLIC_HTTP_PORT=9200 \
-              -e CL_P2P_HTTP_PORT=9201 \
-              -e CL_CLI_HTTP_PORT=9202 \
-              -e CL_EXTERNAL_IP=${NODE1_IP} \
-              -e CL_COLLATERAL=0 \
-              -e CL_GLOBAL_L0_PEER_ID=${GL0_PEER_ID} \
-              -e CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP} \
-              -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
-              ${{ env.IMAGE }}:${{ env.IMAGE_TAG }} \
-              java -Xmx8g -Xms4g -jar /ottochain/jars/ml0.jar run-genesis \
-                /ottochain/genesis/genesis.snapshot"
-          else
-            ssh node1 << EOF
-          docker run -d --name ml0 \
+          # Use entrypoint with IS_INITIAL=true - auto-detects run-genesis vs run-rollback
+          # Genesis file at /ottochain/genesis/genesis.snapshot is auto-discovered
+          ssh node1 "docker run -d --name ml0 \
             --restart unless-stopped \
             --log-opt max-size=100m --log-opt max-file=3 \
             -p 9200:9200 -p 9201:9201 -p 9202:9202 \
             -v /opt/ottochain/keys:/ottochain/keys:ro \
             -v /opt/ottochain/ml0-data:/ottochain/data \
             -v /opt/ottochain/ml0-logs:/tessellation/logs \
+            -v /opt/ottochain/genesis:/ottochain/genesis:ro \
             -e LAYER=ml0 \
-            -e RUN_MODE=run-validator \
+            -e IS_INITIAL=true \
+            -e CL_KEYSTORE=/ottochain/keys/key.p12 \
+            -e CL_KEYALIAS=alias \
+            -e CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
             -e CL_APP_ENV=dev \
             -e CL_EXTERNAL_IP=${NODE1_IP} \
             -e CL_COLLATERAL=0 \
             -e CL_GLOBAL_L0_PEER_ID=${GL0_PEER_ID} \
             -e CL_GLOBAL_L0_PEER_HOST=${NODE1_IP} \
             -e CL_GLOBAL_L0_PEER_PORT=9000 \
-            -e CL_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }} \
-            -e JAVA_OPTS="-Xmx8g -Xms4g" \
-            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}
-          EOF
-          fi
+            -e JAVA_OPTS='-Xmx8g -Xms4g' \
+            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
 
           echo "Waiting for ML0 to become Ready..."
           for i in $(seq 1 90); do
@@ -581,29 +551,27 @@ jobs:
             rest="${host_info#*:}"
             IP="${rest%%:*}"
             KEYS="${rest##*:}"
+            # IS_INITIAL not set = auto-detects run-validator
             ssh $HOST "docker run -d --name ml0 \
               --restart unless-stopped \
-              --entrypoint '' \
               --log-opt max-size=100m --log-opt max-file=3 \
               -p 9200:9200 -p 9201:9201 -p 9202:9202 \
               -v /opt/ottochain/${KEYS}:/ottochain/keys:ro \
               -v /opt/ottochain/ml0-data:/ottochain/data \
               -v /opt/ottochain/ml0-logs:/tessellation/logs \
+              -e LAYER=ml0 \
               -e CL_KEYSTORE=/ottochain/keys/key.p12 \
               -e CL_KEYALIAS=alias \
               -e CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
               -e CL_APP_ENV=dev \
-              -e CL_PUBLIC_HTTP_PORT=9200 \
-              -e CL_P2P_HTTP_PORT=9201 \
-              -e CL_CLI_HTTP_PORT=9202 \
               -e CL_EXTERNAL_IP=${IP} \
               -e CL_COLLATERAL=0 \
               -e CL_GLOBAL_L0_PEER_ID=${GL0_PEER_ID} \
-              -e CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP} \
-              -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
-              -e CL_L0_TOKEN_IDENTIFIER=${TOKEN_ID} \
-              ${{ env.IMAGE }}:${{ env.IMAGE_TAG }} \
-              java -Xmx8g -Xms4g -jar /ottochain/jars/ml0.jar run-validator"
+              -e CL_GLOBAL_L0_PEER_HOST=${NODE1_IP} \
+              -e CL_GLOBAL_L0_PEER_PORT=9000 \
+              -e CL_TOKEN_ID=${TOKEN_ID} \
+              -e JAVA_OPTS='-Xmx8g -Xms4g' \
+              ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
           done
 
           sleep 25
@@ -699,33 +667,31 @@ jobs:
           TOKEN_ID=$(ssh node1 'cat /opt/ottochain/genesis/genesis.address')
           echo "Token ID: $TOKEN_ID"
 
-          # v4.x requires _HTTP_ suffix for peer env vars and all port config via env
+          # IS_INITIAL=true for first CL1 - auto-detects run-initial-validator vs run-validator
           ssh node1 "docker run -d --name cl1 \
             --restart unless-stopped \
-            --entrypoint '' \
             --log-opt max-size=100m --log-opt max-file=3 \
             -p 9300:9300 -p 9301:9301 -p 9302:9302 \
             -v /opt/ottochain/keys:/ottochain/keys:ro \
             -v /opt/ottochain/cl1-data:/ottochain/data \
             -v /opt/ottochain/cl1-logs:/tessellation/logs \
+            -e LAYER=cl1 \
+            -e IS_INITIAL=true \
             -e CL_KEYSTORE=/ottochain/keys/key.p12 \
             -e CL_KEYALIAS=alias \
             -e CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
             -e CL_APP_ENV=dev \
-            -e CL_PUBLIC_HTTP_PORT=9300 \
-            -e CL_P2P_HTTP_PORT=9301 \
-            -e CL_CLI_HTTP_PORT=9302 \
             -e CL_EXTERNAL_IP=${NODE1_IP} \
             -e CL_COLLATERAL=0 \
             -e CL_GLOBAL_L0_PEER_ID=${GL0_PEER_ID} \
-            -e CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP} \
-            -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
+            -e CL_GLOBAL_L0_PEER_HOST=${NODE1_IP} \
+            -e CL_GLOBAL_L0_PEER_PORT=9000 \
             -e CL_L0_PEER_ID=${ML0_PEER_ID} \
-            -e CL_L0_PEER_HTTP_HOST=${NODE1_IP} \
-            -e CL_L0_PEER_HTTP_PORT=9200 \
-            -e CL_L0_TOKEN_IDENTIFIER=${TOKEN_ID} \
-            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }} \
-            java -Xmx4g -Xms2g -jar /ottochain/jars/cl1.jar run-initial-validator"
+            -e CL_L0_PEER_HOST=${NODE1_IP} \
+            -e CL_L0_PEER_PORT=9200 \
+            -e CL_TOKEN_ID=${TOKEN_ID} \
+            -e JAVA_OPTS='-Xmx4g -Xms2g' \
+            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
 
           for i in $(seq 1 60); do
             state=$(ssh node1 'curl -sf http://localhost:9300/node/info | jq -r .state' || echo "")
@@ -742,32 +708,30 @@ jobs:
             rest="${host_info#*:}"
             IP="${rest%%:*}"
             KEYS="${rest##*:}"
+            # IS_INITIAL not set = auto-detects run-validator
             ssh $HOST "docker run -d --name cl1 \
               --restart unless-stopped \
-              --entrypoint '' \
               --log-opt max-size=100m --log-opt max-file=3 \
               -p 9300:9300 -p 9301:9301 -p 9302:9302 \
               -v /opt/ottochain/${KEYS}:/ottochain/keys:ro \
               -v /opt/ottochain/cl1-data:/ottochain/data \
               -v /opt/ottochain/cl1-logs:/tessellation/logs \
+              -e LAYER=cl1 \
               -e CL_KEYSTORE=/ottochain/keys/key.p12 \
               -e CL_KEYALIAS=alias \
               -e CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
               -e CL_APP_ENV=dev \
-              -e CL_PUBLIC_HTTP_PORT=9300 \
-              -e CL_P2P_HTTP_PORT=9301 \
-              -e CL_CLI_HTTP_PORT=9302 \
               -e CL_EXTERNAL_IP=${IP} \
               -e CL_COLLATERAL=0 \
               -e CL_GLOBAL_L0_PEER_ID=${GL0_PEER_ID} \
-              -e CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP} \
-              -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
+              -e CL_GLOBAL_L0_PEER_HOST=${NODE1_IP} \
+              -e CL_GLOBAL_L0_PEER_PORT=9000 \
               -e CL_L0_PEER_ID=${ML0_PEER_ID} \
-              -e CL_L0_PEER_HTTP_HOST=${NODE1_IP} \
-              -e CL_L0_PEER_HTTP_PORT=9200 \
-              -e CL_L0_TOKEN_IDENTIFIER=${TOKEN_ID} \
-              ${{ env.IMAGE }}:${{ env.IMAGE_TAG }} \
-              java -Xmx4g -Xms2g -jar /ottochain/jars/cl1.jar run-validator"
+              -e CL_L0_PEER_HOST=${NODE1_IP} \
+              -e CL_L0_PEER_PORT=9200 \
+              -e CL_TOKEN_ID=${TOKEN_ID} \
+              -e JAVA_OPTS='-Xmx4g -Xms2g' \
+              ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
           done
 
           sleep 25
@@ -789,33 +753,31 @@ jobs:
           ML0_PEER_ID="${{ steps.start-ml0.outputs.ml0_peer_id }}"
           TOKEN_ID=$(ssh node1 'cat /opt/ottochain/genesis/genesis.address')
 
-          # v4.x requires _HTTP_ suffix for peer env vars and all port config via env
+          # IS_INITIAL=true for first DL1 - auto-detects run-initial-validator vs run-validator
           ssh node1 "docker run -d --name dl1 \
             --restart unless-stopped \
-            --entrypoint '' \
             --log-opt max-size=100m --log-opt max-file=3 \
             -p 9400:9400 -p 9401:9401 -p 9402:9402 \
             -v /opt/ottochain/keys:/ottochain/keys:ro \
             -v /opt/ottochain/dl1-data:/ottochain/data \
             -v /opt/ottochain/dl1-logs:/tessellation/logs \
+            -e LAYER=dl1 \
+            -e IS_INITIAL=true \
             -e CL_KEYSTORE=/ottochain/keys/key.p12 \
             -e CL_KEYALIAS=alias \
             -e CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
             -e CL_APP_ENV=dev \
-            -e CL_PUBLIC_HTTP_PORT=9400 \
-            -e CL_P2P_HTTP_PORT=9401 \
-            -e CL_CLI_HTTP_PORT=9402 \
             -e CL_EXTERNAL_IP=${NODE1_IP} \
             -e CL_COLLATERAL=0 \
             -e CL_GLOBAL_L0_PEER_ID=${GL0_PEER_ID} \
-            -e CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP} \
-            -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
+            -e CL_GLOBAL_L0_PEER_HOST=${NODE1_IP} \
+            -e CL_GLOBAL_L0_PEER_PORT=9000 \
             -e CL_L0_PEER_ID=${ML0_PEER_ID} \
-            -e CL_L0_PEER_HTTP_HOST=${NODE1_IP} \
-            -e CL_L0_PEER_HTTP_PORT=9200 \
-            -e CL_L0_TOKEN_IDENTIFIER=${TOKEN_ID} \
-            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }} \
-            java -Xmx4g -Xms2g -jar /ottochain/jars/dl1.jar run-initial-validator"
+            -e CL_L0_PEER_HOST=${NODE1_IP} \
+            -e CL_L0_PEER_PORT=9200 \
+            -e CL_TOKEN_ID=${TOKEN_ID} \
+            -e JAVA_OPTS='-Xmx4g -Xms2g' \
+            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
 
           for i in $(seq 1 60); do
             state=$(ssh node1 'curl -sf http://localhost:9400/node/info | jq -r .state' || echo "")
@@ -832,32 +794,30 @@ jobs:
             rest="${host_info#*:}"
             IP="${rest%%:*}"
             KEYS="${rest##*:}"
+            # IS_INITIAL not set = auto-detects run-validator
             ssh $HOST "docker run -d --name dl1 \
               --restart unless-stopped \
-              --entrypoint '' \
               --log-opt max-size=100m --log-opt max-file=3 \
               -p 9400:9400 -p 9401:9401 -p 9402:9402 \
               -v /opt/ottochain/${KEYS}:/ottochain/keys:ro \
               -v /opt/ottochain/dl1-data:/ottochain/data \
               -v /opt/ottochain/dl1-logs:/tessellation/logs \
+              -e LAYER=dl1 \
               -e CL_KEYSTORE=/ottochain/keys/key.p12 \
               -e CL_KEYALIAS=alias \
               -e CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
               -e CL_APP_ENV=dev \
-              -e CL_PUBLIC_HTTP_PORT=9400 \
-              -e CL_P2P_HTTP_PORT=9401 \
-              -e CL_CLI_HTTP_PORT=9402 \
               -e CL_EXTERNAL_IP=${IP} \
               -e CL_COLLATERAL=0 \
               -e CL_GLOBAL_L0_PEER_ID=${GL0_PEER_ID} \
-              -e CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP} \
-              -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
+              -e CL_GLOBAL_L0_PEER_HOST=${NODE1_IP} \
+              -e CL_GLOBAL_L0_PEER_PORT=9000 \
               -e CL_L0_PEER_ID=${ML0_PEER_ID} \
-              -e CL_L0_PEER_HTTP_HOST=${NODE1_IP} \
-              -e CL_L0_PEER_HTTP_PORT=9200 \
-              -e CL_L0_TOKEN_IDENTIFIER=${TOKEN_ID} \
-              ${{ env.IMAGE }}:${{ env.IMAGE_TAG }} \
-              java -Xmx4g -Xms2g -jar /ottochain/jars/dl1.jar run-validator"
+              -e CL_L0_PEER_HOST=${NODE1_IP} \
+              -e CL_L0_PEER_PORT=9200 \
+              -e CL_TOKEN_ID=${TOKEN_ID} \
+              -e JAVA_OPTS='-Xmx4g -Xms2g' \
+              ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
           done
 
           sleep 25
