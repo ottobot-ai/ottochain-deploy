@@ -1,5 +1,11 @@
 name: Deploy Metagraph
 
+# Prevent concurrent deployments to the same environment
+# Note: inputs.environment works for both workflow_dispatch and workflow_call
+concurrency:
+  group: deploy-metagraph-${{ inputs.environment || 'scratch' }}
+  cancel-in-progress: false
+
 on:
   workflow_dispatch:
     inputs:
