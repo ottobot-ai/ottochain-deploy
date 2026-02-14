@@ -518,6 +518,9 @@ jobs:
             -e CL_GLOBAL_L0_PEER_ID=${GL0_PEER_ID} \
             -e CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP} \
             -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
+            -e CL_PUBLIC_HTTP_PORT=9200 \
+            -e CL_P2P_HTTP_PORT=9201 \
+            -e CL_CLI_HTTP_PORT=9202 \
             -e JAVA_OPTS='-Xmx8g -Xms4g' \
             ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
 
@@ -574,6 +577,9 @@ jobs:
               -e CL_GLOBAL_L0_PEER_ID=${GL0_PEER_ID} \
               -e CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP} \
               -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
+              -e CL_PUBLIC_HTTP_PORT=9200 \
+              -e CL_P2P_HTTP_PORT=9201 \
+              -e CL_CLI_HTTP_PORT=9202 \
               -e CL_TOKEN_ID=${TOKEN_ID} \
               -e JAVA_OPTS='-Xmx8g -Xms4g' \
               ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
@@ -692,9 +698,12 @@ jobs:
             -e CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP} \
             -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
             -e CL_L0_PEER_ID=${ML0_PEER_ID} \
-            -e CL_L0_PEER_HOST=${NODE1_IP} \
-            -e CL_L0_PEER_PORT=9200 \
-            -e CL_TOKEN_ID=${TOKEN_ID} \
+            -e CL_L0_PEER_HTTP_HOST=${NODE1_IP} \
+            -e CL_L0_PEER_HTTP_PORT=9200 \
+            -e CL_L0_TOKEN_IDENTIFIER=${TOKEN_ID} \
+            -e CL_PUBLIC_HTTP_PORT=9300 \
+            -e CL_P2P_HTTP_PORT=9301 \
+            -e CL_CLI_HTTP_PORT=9302 \
             -e JAVA_OPTS='-Xmx4g -Xms2g' \
             ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
 
@@ -732,9 +741,12 @@ jobs:
               -e CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP} \
               -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
               -e CL_L0_PEER_ID=${ML0_PEER_ID} \
-              -e CL_L0_PEER_HOST=${NODE1_IP} \
-              -e CL_L0_PEER_PORT=9200 \
-              -e CL_TOKEN_ID=${TOKEN_ID} \
+              -e CL_L0_PEER_HTTP_HOST=${NODE1_IP} \
+              -e CL_L0_PEER_HTTP_PORT=9200 \
+              -e CL_L0_TOKEN_IDENTIFIER=${TOKEN_ID} \
+              -e CL_PUBLIC_HTTP_PORT=9300 \
+              -e CL_P2P_HTTP_PORT=9301 \
+              -e CL_CLI_HTTP_PORT=9302 \
               -e JAVA_OPTS='-Xmx4g -Xms2g' \
               ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
           done
@@ -778,9 +790,12 @@ jobs:
             -e CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP} \
             -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
             -e CL_L0_PEER_ID=${ML0_PEER_ID} \
-            -e CL_L0_PEER_HOST=${NODE1_IP} \
-            -e CL_L0_PEER_PORT=9200 \
-            -e CL_TOKEN_ID=${TOKEN_ID} \
+            -e CL_L0_PEER_HTTP_HOST=${NODE1_IP} \
+            -e CL_L0_PEER_HTTP_PORT=9200 \
+            -e CL_L0_TOKEN_IDENTIFIER=${TOKEN_ID} \
+            -e CL_PUBLIC_HTTP_PORT=9400 \
+            -e CL_P2P_HTTP_PORT=9401 \
+            -e CL_CLI_HTTP_PORT=9402 \
             -e JAVA_OPTS='-Xmx4g -Xms2g' \
             ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
 
@@ -818,9 +833,12 @@ jobs:
               -e CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP} \
               -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
               -e CL_L0_PEER_ID=${ML0_PEER_ID} \
-              -e CL_L0_PEER_HOST=${NODE1_IP} \
-              -e CL_L0_PEER_PORT=9200 \
-              -e CL_TOKEN_ID=${TOKEN_ID} \
+              -e CL_L0_PEER_HTTP_HOST=${NODE1_IP} \
+              -e CL_L0_PEER_HTTP_PORT=9200 \
+              -e CL_L0_TOKEN_IDENTIFIER=${TOKEN_ID} \
+              -e CL_PUBLIC_HTTP_PORT=9400 \
+              -e CL_P2P_HTTP_PORT=9401 \
+              -e CL_CLI_HTTP_PORT=9402 \
               -e JAVA_OPTS='-Xmx4g -Xms2g' \
               ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
           done
