@@ -13,7 +13,7 @@ components:
   # Backend services (bridge, indexer, traffic-gen)
   services: "0.3.5"
   # Explorer UI
-  explorer: "0.1.0"
+  explorer: "0.3.3"
   # Monitoring stack (Grafana, Prometheus configs)
   monitoring: "0.1.0"
 # External dependencies
