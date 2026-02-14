@@ -58,7 +58,11 @@ init_state() {
 
 get_state() {
   local layer=$1 field=$2
-  jq -r --arg l "$layer" --arg f "$field" '.[$l][$f] // empty' "$STATE_FILE"
+  if [[ -f "$STATE_FILE" ]]; then
+    jq -r --arg l "$layer" --arg f "$field" '.[$l][$f] // empty' "$STATE_FILE" 2>/dev/null || echo ""
+  else
+    echo ""
+  fi
 }
 
 set_state() {
@@ -286,6 +290,7 @@ check_layer() {
 }
 
 show_status() {
+  init_state  # Ensure state file exists
   echo "=== Layer Watchdog Status ==="
   echo ""
   
