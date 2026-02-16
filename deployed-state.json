@@ -1,0 +1,72 @@
+{
+  "environments": {
+    "development": {
+      "current": {
+        "images": {
+          "services": "ghcr.io/ottobot-ai/ottochain-services:latest",
+          "explorer": "ghcr.io/ottobot-ai/ottochain-explorer:latest",
+          "metagraph": "eclipse-temurin:21-jdk"
+        },
+        "jars": {
+          "tessellation": "2.10.1",
+          "ottochain": "0.5.0"
+        },
+        "git": {
+          "ottochain": "",
+          "services": "",
+          "explorer": "",
+          "deploy": ""
+        },
+        "deployed_at": "2026-02-16T14:35:00Z"
+      },
+      "previous": {}
+    },
+    "staging": {
+      "current": {},
+      "previous": {}
+    },
+    "scratch": {
+      "current": {
+        "images": {
+          "services": "ghcr.io/ottobot-ai/ottochain-services:latest",
+          "explorer": "ghcr.io/ottobot-ai/ottochain-explorer:latest",
+          "metagraph": "eclipse-temurin:21-jdk"
+        },
+        "jars": {
+          "tessellation": "2.10.1",
+          "ottochain": "0.5.0"
+        },
+        "git": {
+          "ottochain": "",
+          "services": "",
+          "explorer": "",
+          "deploy": "88112c73676f1a7a30c50c387c5a1c9f3fc15638"
+        },
+        "deployed_at": "2026-02-16T14:38:23Z"
+      },
+      "previous": {
+        "images": {
+          "services": "ghcr.io/ottobot-ai/ottochain-services:latest",
+          "explorer": "ghcr.io/ottobot-ai/ottochain-explorer:latest",
+          "metagraph": "eclipse-temurin:21-jdk"
+        },
+        "jars": {
+          "tessellation": "2.10.1",
+          "ottochain": "0.5.0"
+        },
+        "git": {
+          "ottochain": "",
+          "services": "",
+          "explorer": "",
+          "deploy": ""
+        },
+        "deployed_at": "2026-02-16T14:35:00Z"
+      }
+    },
+    "production": {
+      "current": {},
+      "previous": {}
+    }
+  },
+  "last_updated": "2026-02-16T14:38:23Z"
+}

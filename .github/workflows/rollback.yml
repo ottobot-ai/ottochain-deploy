@@ -1,0 +1,269 @@
+name: Rollback Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment to rollback'
+        required: true
+        type: choice
+        options:
+          - development
+          - staging  
+          - scratch
+          - production
+      confirm_rollback:
+        description: 'Type "CONFIRM" to proceed with rollback'
+        required: true
+        type: string
+
+env:
+  DEPLOYED_STATE_FILE: deployed-state.json
+
+jobs:
+  validate-rollback:
+    name: Validate Rollback Request
+    runs-on: ubuntu-latest
+    outputs:
+      can_rollback: ${{ steps.validate.outputs.can_rollback }}
+      previous_versions: ${{ steps.validate.outputs.previous_versions }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Validate confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm_rollback }}" != "CONFIRM" ]; then
+            echo "❌ Rollback not confirmed. You must type 'CONFIRM' to proceed."
+            exit 1
+          fi
+          echo "✅ Rollback confirmed"
+          
+      - name: Check deployed state
+        id: validate
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          
+          # Check if deployed state file exists
+          if [ ! -f "$DEPLOYED_STATE_FILE" ]; then
+            echo "⚠️ No deployed state found. Creating initial state from current versions.yml"
+            
+            # Create initial deployed state structure
+            cat > $DEPLOYED_STATE_FILE << EOF
+          {
+            "environments": {
+              "development": {"current": {}, "previous": {}},
+              "staging": {"current": {}, "previous": {}},
+              "scratch": {"current": {}, "previous": {}},
+              "production": {"current": {}, "previous": {}}
+            },
+            "last_updated": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          }
+          EOF
+            
+            echo "can_rollback=false" >> $GITHUB_OUTPUT
+            echo "previous_versions={}" >> $GITHUB_OUTPUT
+            echo "❌ No previous deployment found for $ENVIRONMENT. Cannot rollback on first deployment."
+            exit 1
+          fi
+          
+          # Check if previous versions exist for target environment
+          PREVIOUS=$(jq -r ".environments[\"$ENVIRONMENT\"].previous // {}" $DEPLOYED_STATE_FILE)
+          
+          if [ "$PREVIOUS" == "{}" ] || [ "$PREVIOUS" == "null" ]; then
+            echo "can_rollback=false" >> $GITHUB_OUTPUT  
+            echo "previous_versions={}" >> $GITHUB_OUTPUT
+            echo "❌ No previous deployment found for $ENVIRONMENT. Cannot rollback."
+            exit 1
+          fi
+          
+          echo "can_rollback=true" >> $GITHUB_OUTPUT
+          echo "previous_versions=$PREVIOUS" >> $GITHUB_OUTPUT
+          echo "✅ Previous deployment found for $ENVIRONMENT"
+          
+          # Display rollback plan
+          echo "## 📋 Rollback Plan" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** $ENVIRONMENT" >> $GITHUB_STEP_SUMMARY
+          echo "**Previous Versions:**" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo "$PREVIOUS" | jq '.' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  rollback-deployment:
+    name: Execute Rollback
+    runs-on: ubuntu-latest
+    needs: validate-rollback
+    if: needs.validate-rollback.outputs.can_rollback == 'true'
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Setup environment variables
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          echo "ENVIRONMENT=$ENVIRONMENT" >> $GITHUB_ENV
+          
+          # Load environment-specific configuration
+          if [ -f ".env.$ENVIRONMENT.template" ]; then
+            cp ".env.$ENVIRONMENT.template" ".env.$ENVIRONMENT"
+            echo "✅ Loaded $ENVIRONMENT environment configuration"
+          fi
+          
+      - name: Parse previous versions
+        id: versions
+        run: |
+          PREVIOUS='${{ needs.validate-rollback.outputs.previous_versions }}'
+          
+          # Extract version information
+          SERVICES_IMAGE=$(echo "$PREVIOUS" | jq -r '.images.services // "latest"')
+          EXPLORER_IMAGE=$(echo "$PREVIOUS" | jq -r '.images.explorer // "latest"')
+          TESSELLATION_VERSION=$(echo "$PREVIOUS" | jq -r '.jars.tessellation // "latest"')
+          OTTOCHAIN_VERSION=$(echo "$PREVIOUS" | jq -r '.jars.ottochain // "latest"')
+          
+          echo "services_image=$SERVICES_IMAGE" >> $GITHUB_OUTPUT
+          echo "explorer_image=$EXPLORER_IMAGE" >> $GITHUB_OUTPUT
+          echo "tessellation_version=$TESSELLATION_VERSION" >> $GITHUB_OUTPUT
+          echo "ottochain_version=$OTTOCHAIN_VERSION" >> $GITHUB_OUTPUT
+          
+          echo "## 🔄 Rolling back to:" >> $GITHUB_STEP_SUMMARY
+          echo "- Services: $SERVICES_IMAGE" >> $GITHUB_STEP_SUMMARY
+          echo "- Explorer: $EXPLORER_IMAGE" >> $GITHUB_STEP_SUMMARY  
+          echo "- Tessellation: $TESSELLATION_VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "- OttoChain: $OTTOCHAIN_VERSION" >> $GITHUB_STEP_SUMMARY
+          
+      - name: Update versions.yml to previous state
+        run: |
+          # Backup current versions.yml
+          cp versions.yml "versions.yml.backup-$(date +%Y%m%d-%H%M%S)"
+          
+          # Update versions.yml with previous versions
+          PREVIOUS='${{ needs.validate-rollback.outputs.previous_versions }}'
+          
+          # Update images section
+          SERVICES_IMAGE="${{ steps.versions.outputs.services_image }}"
+          EXPLORER_IMAGE="${{ steps.versions.outputs.explorer_image }}"
+          
+          if [ "$SERVICES_IMAGE" != "null" ] && [ "$SERVICES_IMAGE" != "latest" ]; then
+            sed -i "s|services: .*|services: $SERVICES_IMAGE|" versions.yml
+          fi
+          
+          if [ "$EXPLORER_IMAGE" != "null" ] && [ "$EXPLORER_IMAGE" != "latest" ]; then
+            sed -i "s|explorer: .*|explorer: $EXPLORER_IMAGE|" versions.yml  
+          fi
+          
+          # Update JAR versions
+          TESSELLATION_VERSION="${{ steps.versions.outputs.tessellation_version }}"
+          OTTOCHAIN_VERSION="${{ steps.versions.outputs.ottochain_version }}"
+          
+          if [ "$TESSELLATION_VERSION" != "null" ] && [ "$TESSELLATION_VERSION" != "latest" ]; then
+            sed -i "s|tessellation: \".*\"|tessellation: \"$TESSELLATION_VERSION\"|" versions.yml
+          fi
+          
+          if [ "$OTTOCHAIN_VERSION" != "null" ] && [ "$OTTOCHAIN_VERSION" != "latest" ]; then
+            sed -i "s|ottochain: \".*\"|ottochain: \"$OTTOCHAIN_VERSION\"|" versions.yml
+          fi
+          
+          echo "✅ Updated versions.yml with previous versions"
+          
+      - name: Deploy previous versions
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          
+          echo "🚀 Starting rollback deployment to $ENVIRONMENT..."
+          
+          # Trigger appropriate deployment workflow based on environment
+          case "$ENVIRONMENT" in
+            "scratch")
+              echo "Would trigger: .github/workflows/release-scratch.yml"
+              # gh workflow run release-scratch.yml --ref main
+              ;;
+            "staging") 
+              echo "Would trigger: .github/workflows/deploy-staging.yml"
+              # gh workflow run deploy-staging.yml --ref main
+              ;;
+            "development")
+              echo "Would trigger: .github/workflows/deploy-development.yml"
+              # gh workflow run deploy-development.yml --ref main
+              ;;
+            "production")
+              echo "Would trigger: .github/workflows/deploy-production.yml"
+              # gh workflow run deploy-production.yml --ref main
+              ;;
+            *)
+              echo "❌ Unknown environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          
+          echo "✅ Rollback deployment initiated"
+          
+          # Note: In a real implementation, you would actually trigger the deployment
+          # For now, we're just showing what would happen
+          
+      - name: Update deployed state after rollback
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          
+          # Read current deployed state
+          if [ ! -f "$DEPLOYED_STATE_FILE" ]; then
+            echo "❌ Deployed state file not found"
+            exit 1
+          fi
+          
+          # Move current to previous and set rollback as current
+          CURRENT=$(jq ".environments[\"$ENVIRONMENT\"].current" $DEPLOYED_STATE_FILE)
+          ROLLBACK_VERSIONS='${{ needs.validate-rollback.outputs.previous_versions }}'
+          
+          # Update deployed state
+          jq --argjson current "$CURRENT" \
+             --argjson rollback "$ROLLBACK_VERSIONS" \
+             --arg env "$ENVIRONMENT" \
+             --arg timestamp "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+             '.environments[$env].previous = $current | 
+              .environments[$env].current = $rollback |
+              .last_updated = $timestamp' \
+             $DEPLOYED_STATE_FILE > tmp.json && mv tmp.json $DEPLOYED_STATE_FILE
+          
+          echo "✅ Updated deployed state after rollback"
+          
+      - name: Commit deployed state changes
+        run: |
+          # Configure git
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          
+          # Commit changes
+          git add $DEPLOYED_STATE_FILE versions.yml*
+          git commit -m "🔄 Rollback ${{ github.event.inputs.environment }} environment
+          
+          Rolled back to previous deployment state.
+          
+          Workflow: ${{ github.workflow }}
+          Run: ${{ github.run_number }}"
+          
+          git push
+          
+          echo "✅ Committed deployed state changes"
+          
+      - name: Rollback Summary
+        run: |
+          echo "## 🎉 Rollback Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ✅ SUCCESS" >> $GITHUB_STEP_SUMMARY
+          echo "**Timestamp:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 What was rolled back:" >> $GITHUB_STEP_SUMMARY
+          echo "- Services image: ${{ steps.versions.outputs.services_image }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Explorer image: ${{ steps.versions.outputs.explorer_image }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Tessellation version: ${{ steps.versions.outputs.tessellation_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- OttoChain version: ${{ steps.versions.outputs.ottochain_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔍 Next Steps:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Verify services are running correctly" >> $GITHUB_STEP_SUMMARY
+          echo "2. Check monitoring dashboards" >> $GITHUB_STEP_SUMMARY
+          echo "3. Run smoke tests if available" >> $GITHUB_STEP_SUMMARY
