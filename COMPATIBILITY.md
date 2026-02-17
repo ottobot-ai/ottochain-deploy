@@ -2,7 +2,7 @@
 
 > Auto-generated from `versions.yml` — do not edit manually.
 > Run `scripts/generate-compatibility.sh` to update.
-> Generated: 2026-02-14
+> Generated: 2026-02-17
 
 ## Current Release
 

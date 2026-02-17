@@ -64,5 +64,5 @@ deployed:
     services: "0.2.0"
     explorer: "0.1.0"
     monitoring: ""
-    timestamp: "2026-02-14T16:34:17Z"
-    workflow_run: "22020528272"
+    timestamp: "2026-02-17T15:51:46Z"
+    workflow_run: "22104858462"
