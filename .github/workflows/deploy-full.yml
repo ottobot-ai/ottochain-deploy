@@ -54,6 +54,11 @@ on:
         required: false
         default: false
         type: boolean
+      enable_gl1:
+        description: 'Enable GL1 (DAG L1) layer'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   # Determine environment from branch or input
@@ -85,6 +90,7 @@ jobs:
       environment: ${{ needs.setup.outputs.environment }}
       wipe_state: ${{ inputs.wipe_state == true }}
       image_tag: ${{ inputs.metagraph_version || 'latest' }}
+      enable_gl1: ${{ inputs.enable_gl1 == true }}
     secrets: inherit
 
   # Deploy services (docker compose stack)
