@@ -1,11 +1,15 @@
-# OttoChain Metagraph - Full 5-Layer Stack
-# Each node runs all 5 layers. Use profiles for genesis vs validator.
+# OttoChain Metagraph - 4-Layer Stack (GL1 disabled by default)
+# Each node runs GL0, ML0, CL1, DL1. Use profiles for genesis vs validator.
 #
 # Usage on node1 (genesis):
 #   NODE_IP=<node1-ip> docker compose --profile genesis up -d
 #
 # Usage on node2/node3 (validators):
 #   NODE_IP=<this-node-ip> GENESIS_IP=<genesis-ip> docker compose --profile validator up -d
+#
+# NOTE: GL1 (DAG L1) is disabled by default as it's not needed for metagraph operation
+# and was causing cluster stability issues. To enable GL1, use --profile gl1 in addition
+# to genesis/validator profiles.
 
 x-common: &common
   restart: unless-stopped
@@ -66,12 +70,14 @@ services:
 
   # ============================================
   # GL1 - Global L1 (DAG Transactions)
+  # DISABLED BY DEFAULT - not needed for metagraph, causes stability issues
+  # To enable: docker compose --profile genesis --profile gl1 up -d
   # ============================================
   gl1-initial:
     <<: *common
     image: ${GL1_IMAGE:-eclipse-temurin:21-jdk}
     container_name: gl1
-    profiles: ["genesis"]
+    profiles: ["gl1"]
     command: ["java", "-jar", "/jars/dag-l1.jar", "run-initial-validator"]
     volumes:
       - /opt/ottochain/keys:/keys:ro
@@ -90,7 +96,7 @@ services:
     <<: *common
     image: ${GL1_IMAGE:-eclipse-temurin:21-jdk}
     container_name: gl1
-    profiles: ["validator"]
+    profiles: ["gl1"]
     command: ["java", "-jar", "/jars/dag-l1.jar", "run-validator"]
     volumes:
       - /opt/ottochain/keys:/keys:ro
