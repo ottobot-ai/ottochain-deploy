@@ -40,13 +40,10 @@ services:
     restart: unless-stopped
     environment:
       - PORT=3030
-      # Plural URLs for multi-node failover/load-balancing
+      # Multi-node URLs for failover/load-balancing
       - GL0_URLS=http://node1:9000,http://node2:9000,http://node3:9000
       - ML0_URLS=http://node1:9200,http://node2:9200,http://node3:9200
       - DL1_URLS=http://node1:9400,http://node2:9400,http://node3:9400
-      # Legacy singular (fallback)
-      - ML0_URL=http://node1:9200
-      - DL1_URL=http://node1:9400
       - DATABASE_URL=postgresql://${POSTGRES_USER:-ottochain}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ottochain}
       - GIT_SHA=${GIT_SHA:-unknown}
       - BUILD_TIME=${BUILD_TIME:-unknown}
@@ -72,12 +69,10 @@ services:
     command: ["node", "packages/indexer/dist/index.js"]
     environment:
       - PORT=3031
-      # Plural URLs for multi-node failover/load-balancing
+      # Multi-node URLs for failover/load-balancing
       - GL0_URLS=http://node1:9000,http://node2:9000,http://node3:9000
       - ML0_URLS=http://node1:9200,http://node2:9200,http://node3:9200
       - DL1_URLS=http://node1:9400,http://node2:9400,http://node3:9400
-      # Legacy singular (fallback)
-      - ML0_URL=http://node1:9200
       - DATABASE_URL=postgresql://${POSTGRES_USER:-ottochain}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ottochain}
       - REDIS_URL=redis://redis:6379
       - GIT_SHA=${GIT_SHA:-unknown}
@@ -140,9 +135,6 @@ services:
       # Settings
       - POLL_INTERVAL_MS=10000
       - MONITOR_PORT=3032
-      # Auth (set your own password, or leave blank for auto-generated)
-      - MONITOR_USER=admin
-      - MONITOR_PASS=${MONITOR_PASS:-}
       # Debug/version info (passed through from build or runtime)
       - GIT_SHA=${GIT_SHA:-unknown}
       - BUILD_TIME=${BUILD_TIME:-unknown}
