@@ -135,6 +135,7 @@ services:
       # Settings
       - POLL_INTERVAL_MS=10000
       - MONITOR_PORT=3032
+      - MONITOR_AUTH=false
       # Debug/version info (passed through from build or runtime)
       - GIT_SHA=${GIT_SHA:-unknown}
       - BUILD_TIME=${BUILD_TIME:-unknown}
