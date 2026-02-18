@@ -132,6 +132,7 @@ services:
       - BRIDGE_URL=http://bridge:3030
       - INDEXER_URL=http://indexer:3031
       - GATEWAY_URL=http://gateway:4000
+      - TRAFFIC_GEN_URL=http://traffic-gen:3033
       # Settings
       - POLL_INTERVAL_MS=10000
       - MONITOR_PORT=3032
@@ -146,6 +147,40 @@ services:
       - bridge
       - indexer
       - gateway
+    extra_hosts:
+      - "node1:${NODE1_IP:-node1}"
+      - "node2:${NODE2_IP:-node2}"
+      - "node3:${NODE3_IP:-node3}"
+
+  traffic-gen:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+      args:
+        - GIT_SHA=${GIT_SHA:-unknown}
+        - BUILD_TIME=${BUILD_TIME:-unknown}
+        - VERSION=${VERSION:-0.0.0}
+    restart: unless-stopped
+    command: ["node", "packages/traffic-generator/dist/index.js"]
+    environment:
+      # Mode and targets
+      - MODE=${TRAFFIC_GEN_MODE:-standard}
+      - TARGET_TPS=${TRAFFIC_GEN_TARGET_TPS:-5}
+      - TARGET_POPULATION=${TRAFFIC_GEN_TARGET_POPULATION:-100}
+      # Endpoints
+      - BRIDGE_URL=http://bridge:3030
+      - ML0_URL=http://node1:9200
+      # Status server port
+      - STATUS_PORT=3033
+      # Debug
+      - GIT_SHA=${GIT_SHA:-unknown}
+      - BUILD_TIME=${BUILD_TIME:-unknown}
+    ports:
+      - "3033:3033"
+    profiles:
+      - traffic
+    depends_on:
+      - bridge
     extra_hosts:
       - "node1:${NODE1_IP:-node1}"
       - "node2:${NODE2_IP:-node2}"
