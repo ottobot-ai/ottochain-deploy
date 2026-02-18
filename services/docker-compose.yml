@@ -40,6 +40,11 @@ services:
     restart: unless-stopped
     environment:
       - PORT=3030
+      # Plural URLs for multi-node failover/load-balancing
+      - GL0_URLS=http://node1:9000,http://node2:9000,http://node3:9000
+      - ML0_URLS=http://node1:9200,http://node2:9200,http://node3:9200
+      - DL1_URLS=http://node1:9400,http://node2:9400,http://node3:9400
+      # Legacy singular (fallback)
       - ML0_URL=http://node1:9200
       - DL1_URL=http://node1:9400
       - DATABASE_URL=postgresql://${POSTGRES_USER:-ottochain}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ottochain}
@@ -67,6 +72,11 @@ services:
     command: ["node", "packages/indexer/dist/index.js"]
     environment:
       - PORT=3031
+      # Plural URLs for multi-node failover/load-balancing
+      - GL0_URLS=http://node1:9000,http://node2:9000,http://node3:9000
+      - ML0_URLS=http://node1:9200,http://node2:9200,http://node3:9200
+      - DL1_URLS=http://node1:9400,http://node2:9400,http://node3:9400
+      # Legacy singular (fallback)
       - ML0_URL=http://node1:9200
       - DATABASE_URL=postgresql://${POSTGRES_USER:-ottochain}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ottochain}
       - REDIS_URL=redis://redis:6379
@@ -119,8 +129,8 @@ services:
     restart: unless-stopped
     command: ["node", "packages/monitor/dist/index.js"]
     environment:
-      # Metagraph nodes (adjust IPs for your deployment)
-      - GL0_URLS=http://node1:9000
+      # Metagraph nodes (all 3 nodes for failover/load-balancing)
+      - GL0_URLS=http://node1:9000,http://node2:9000,http://node3:9000
       - ML0_URLS=http://node1:9200,http://node2:9200,http://node3:9200
       - DL1_URLS=http://node1:9400,http://node2:9400,http://node3:9400
       # Services (internal docker network)
