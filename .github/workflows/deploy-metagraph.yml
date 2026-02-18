@@ -28,6 +28,11 @@ on:
         required: false
         default: 'latest'
         type: string
+      enable_gl1:
+        description: 'Enable GL1 (DAG L1) layer'
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       environment:
@@ -41,6 +46,10 @@ on:
         required: false
         type: string
         default: 'latest'
+      enable_gl1:
+        required: false
+        type: boolean
+        default: false
 
 env:
   # Single image with all 5 layers (tessellation + metagraph)
@@ -331,6 +340,7 @@ jobs:
           echo "✅ GL0 cluster fully operational (3/3 Ready)"
 
       - name: Start GL1
+        if: ${{ inputs.enable_gl1 == true }}
         run: |
           NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
           NODE2_IP="${{ secrets.HETZNER_NODE2_IP }}"
@@ -904,10 +914,16 @@ jobs:
 
       - name: Check all layers
         run: |
-          echo "=== OttoChain 5-Layer Cluster Health ==="
+          echo "=== OttoChain Cluster Health ==="
           FAILED=0
 
-          for layer in gl0 gl1 ml0 cl1 dl1; do
+          # GL1 only included if enabled
+          LAYERS="gl0 ml0 cl1 dl1"
+          if [ "${{ inputs.enable_gl1 }}" = "true" ]; then
+            LAYERS="gl0 gl1 ml0 cl1 dl1"
+          fi
+
+          for layer in $LAYERS; do
             case $layer in
               gl0) port=9000 ;; gl1) port=9100 ;; ml0) port=9200 ;; cl1) port=9300 ;; dl1) port=9400 ;;
             esac
@@ -950,7 +966,13 @@ jobs:
           echo "| Layer | Port | State | Cluster |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|------|-------|---------|" >> $GITHUB_STEP_SUMMARY
 
-          for layer in GL0 GL1 ML0 CL1 DL1; do
+          # GL1 only included if enabled
+          LAYERS="GL0 ML0 CL1 DL1"
+          if [ "${{ inputs.enable_gl1 }}" = "true" ]; then
+            LAYERS="GL0 GL1 ML0 CL1 DL1"
+          fi
+          
+          for layer in $LAYERS; do
             case $layer in
               GL0) port=9000 ;; GL1) port=9100 ;; ML0) port=9200 ;; CL1) port=9300 ;; DL1) port=9400 ;;
             esac
