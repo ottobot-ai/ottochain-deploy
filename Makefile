@@ -110,3 +110,48 @@ env-testnet:
 network:
 	docker network create ottochain 2>/dev/null || true
 	docker network create monitoring 2>/dev/null || true
+
+# ===== Release Management =====
+.PHONY: release validate-compat rollback release-dry-run rollback-list
+
+## release COMPONENT=sdk VERSION=1.1.0 [MSG="..."]
+## Coordinate a cross-repo version bump with compatibility validation
+release:
+	@if [ -z "$(COMPONENT)" ] || [ -z "$(VERSION)" ]; then \
+	  echo "Usage: make release COMPONENT=<component> VERSION=<version> [MSG='...']"; \
+	  echo "  Components: ottochain, sdk, services, explorer, monitoring"; \
+	  exit 1; \
+	fi
+	@scripts/release-coordinator.sh "$(COMPONENT)" "$(VERSION)" $(if $(MSG),--message "$(MSG)",)
+
+## release-dry-run COMPONENT=sdk VERSION=1.1.0
+## Validate release without making changes
+release-dry-run:
+	@if [ -z "$(COMPONENT)" ] || [ -z "$(VERSION)" ]; then \
+	  echo "Usage: make release-dry-run COMPONENT=<component> VERSION=<version>"; \
+	  exit 1; \
+	fi
+	@scripts/release-coordinator.sh "$(COMPONENT)" "$(VERSION)" --dry-run
+
+## validate-compat [COMPONENT=sdk VERSION=1.1.0]
+## Validate cross-repo compatibility (current state or hypothetical bump)
+validate-compat:
+	@if [ -n "$(COMPONENT)" ] && [ -n "$(VERSION)" ]; then \
+	  scripts/validate-compatibility.sh "$(COMPONENT)" "$(VERSION)" --all; \
+	else \
+	  scripts/validate-compatibility.sh --all; \
+	fi
+
+## rollback COMPONENT=services VERSION=0.4.0
+## Roll back a component to a previous version
+rollback:
+	@if [ -z "$(COMPONENT)" ] || [ -z "$(VERSION)" ]; then \
+	  echo "Usage: make rollback COMPONENT=<component> VERSION=<previous-version>"; \
+	  exit 1; \
+	fi
+	@scripts/rollback-release.sh "$(COMPONENT)" "$(VERSION)"
+
+## rollback-list
+## List available rollback snapshots
+rollback-list:
+	@scripts/rollback-release.sh --list
