@@ -46,7 +46,8 @@ jobs:
           VERSION="${VERSION#v}"
           echo "component=$COMPONENT" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "branch=bump/$COMPONENT-v$VERSION" >> $GITHUB_OUTPUT
+          # Use fixed branch name (without version) so subsequent bumps update the same PR
+          echo "branch=bump/$COMPONENT" >> $GITHUB_OUTPUT
           echo "Bumping $COMPONENT to v$VERSION"
 
       - name: Setup yq
