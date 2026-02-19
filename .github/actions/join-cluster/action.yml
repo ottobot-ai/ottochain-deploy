@@ -71,6 +71,8 @@ runs:
         PEER_IP="${{ inputs.peer_ip }}"
         NAME="${{ inputs.layer_name }}"
         CONTAINER="${{ inputs.container_name }}"
+        MAX_JOIN_ATTEMPTS=5
+        JOIN_RETRY_DELAY=5
         
         # Default container name to lowercase layer name
         if [ -z "$CONTAINER" ]; then
@@ -85,10 +87,40 @@ runs:
         echo "JOIN_PAYLOAD: $JOIN_PAYLOAD"
         
         for host in $HOSTS; do
-          echo "Joining $host $NAME..."
-          if ssh "$host" "docker exec $CONTAINER curl -sf -X POST http://127.0.0.1:$CLI_PORT/cluster/join -H 'Content-Type: application/json' -d '$JOIN_PAYLOAD'"; then
-            echo "✓ $host $NAME join initiated"
-          else
-            echo "⚠ $host $NAME join failed (may already be joined)"
+          echo "Joining $host $NAME with retry logic..."
+          JOIN_SUCCESS=false
+          
+          for attempt in $(seq 1 $MAX_JOIN_ATTEMPTS); do
+            RESPONSE=$(ssh "$host" "docker exec $CONTAINER curl -sf -X POST http://127.0.0.1:$CLI_PORT/cluster/join -H 'Content-Type: application/json' -d '$JOIN_PAYLOAD' 2>&1" || true)
+            
+            # Check for success (empty response, or explicit success message)
+            if [ -z "$RESPONSE" ] || echo "$RESPONSE" | grep -qi "success\|ok"; then
+              echo "✓ $host $NAME join initiated (attempt $attempt)"
+              JOIN_SUCCESS=true
+              break
+            fi
+            
+            # Check if already joined
+            if echo "$RESPONSE" | grep -qi "already"; then
+              echo "✓ $host $NAME already in cluster"
+              JOIN_SUCCESS=true
+              break
+            fi
+            
+            # Check for SessionStarted (node not ready to join yet)
+            if echo "$RESPONSE" | grep -qi "SessionStarted"; then
+              echo "⏳ $host $NAME still in SessionStarted, waiting... (attempt $attempt/$MAX_JOIN_ATTEMPTS)"
+            else
+              echo "⚠ $host $NAME join attempt $attempt failed: $RESPONSE"
+            fi
+            
+            if [ "$attempt" -lt "$MAX_JOIN_ATTEMPTS" ]; then
+              sleep $JOIN_RETRY_DELAY
+            fi
+          done
+          
+          if [ "$JOIN_SUCCESS" = "false" ]; then
+            echo "::error::$host $NAME failed to join cluster after $MAX_JOIN_ATTEMPTS attempts"
+            exit 1
           fi
         done
