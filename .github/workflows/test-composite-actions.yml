@@ -1,0 +1,192 @@
+# Test workflow for composite actions (TDD)
+# This will FAIL until the composite actions are implemented
+
+name: Test Composite Actions (TDD)
+
+on:
+  push:
+    branches: [test/refactor-workflows-tdd]
+  workflow_dispatch:
+
+jobs:
+  test-ssh-setup-composite:
+    name: Test SSH Setup Composite Action
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Test SSH Setup Composite Action
+        # This should FAIL until implemented
+        uses: ./.github/actions/setup-ssh
+        with:
+          hetzner_ssh_key: ${{ secrets.HETZNER_SSH_KEY }}
+          node1_ip: ${{ secrets.HETZNER_NODE1_IP }}
+          node2_ip: ${{ secrets.HETZNER_NODE2_IP }}
+          node3_ip: ${{ secrets.HETZNER_NODE3_IP }}
+          services_ip: ${{ secrets.HETZNER_SERVICES_IP }}
+          
+      - name: Verify SSH Config Created
+        run: |
+          if [ ! -f ~/.ssh/config ]; then
+            echo "❌ SSH config file not created by composite action"
+            exit 1
+          fi
+          
+          for host in node1 node2 node3 services; do
+            if ! grep -q "Host $host" ~/.ssh/config; then
+              echo "❌ SSH config missing host: $host"
+              exit 1
+            fi
+          done
+          
+          if [ ! -f ~/.ssh/hetzner ]; then
+            echo "❌ SSH private key file not created"
+            exit 1
+          fi
+          
+          if [ "$(stat -c %a ~/.ssh/hetzner)" != "600" ]; then
+            echo "❌ SSH private key permissions incorrect"
+            exit 1
+          fi
+          
+          echo "✅ SSH setup composite action works correctly"
+
+  test-deployment-plan-composite:
+    name: Test Deployment Plan Composite Action
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Test Deployment Plan Composite Action  
+        # This should FAIL until implemented
+        uses: ./.github/actions/plan-deployment
+        with:
+          environment: staging
+          branch_name: ${{ github.ref_name }}
+          
+      - name: Verify Deployment Plan Output
+        run: |
+          if [ ! -f deployment-plan.txt ]; then
+            echo "❌ Deployment plan file not created"
+            exit 1
+          fi
+          
+          if ! command -v yq &> /dev/null; then
+            echo "❌ yq not installed by composite action"
+            exit 1
+          fi
+          
+          if [ -z "${{ steps.plan-deployment.outputs.environment }}" ]; then
+            echo "❌ Environment output not set"
+            exit 1
+          fi
+          
+          echo "✅ Deployment plan composite action works correctly"
+
+  test-java-build-composite:
+    name: Test Java Build Setup Composite Action
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Test Java Build Setup Composite Action
+        # This should FAIL until implemented
+        uses: ./.github/actions/setup-java-build
+        with:
+          java_version: '21'
+          tessellation_version: 'v4.0.0-rc.2'
+          
+      - name: Verify Java Build Setup
+        run: |
+          java -version 2>&1 | grep -q "21\." || {
+            echo "❌ Java 21 not installed"
+            exit 1
+          }
+          
+          if ! command -v sbt &> /dev/null; then
+            echo "❌ sbt not installed"
+            exit 1
+          fi
+          
+          if [ ! -d "tessellation" ]; then
+            echo "❌ Tessellation repository not checked out"
+            exit 1
+          fi
+          
+          if [ ! -d "ottochain" ]; then
+            echo "❌ OttoChain repository not checked out"
+            exit 1
+          fi
+          
+          echo "✅ Java build setup composite action works correctly"
+
+  test-container-management-composite:
+    name: Test Container Management Composite Action
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Test Container Stop Composite Action
+        # This should FAIL until implemented
+        uses: ./.github/actions/manage-containers
+        with:
+          action: 'stop'
+          hosts: 'node1,node2,node3'
+          ssh_key: ${{ secrets.HETZNER_SSH_KEY }}
+          node_ips: '${{ secrets.HETZNER_NODE1_IP }},${{ secrets.HETZNER_NODE2_IP }},${{ secrets.HETZNER_NODE3_IP }}'
+          
+      - name: Test Container Start Composite Action
+        # This should FAIL until implemented
+        uses: ./.github/actions/manage-containers
+        with:
+          action: 'start'
+          hosts: 'node1,node2,node3'
+          profiles: 'genesis,validator'
+          ssh_key: ${{ secrets.HETZNER_SSH_KEY }}
+          node_ips: '${{ secrets.HETZNER_NODE1_IP }},${{ secrets.HETZNER_NODE2_IP }},${{ secrets.HETZNER_NODE3_IP }}'
+          
+      - name: Verify Container Management
+        run: |
+          # These would typically verify the containers were managed properly
+          # For now just verify the action structure is correct
+          echo "✅ Container management composite actions structure validated"
+
+  test-environment-setup-composite:
+    name: Test Environment Setup Composite Action
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Test Environment Setup Composite Action
+        # This should FAIL until implemented
+        uses: ./.github/actions/setup-environment
+        with:
+          environment: 'development'
+          token_id: 'test-token-123'
+          gl0_peer_id: 'test-gl0-peer'
+          ml0_peer_id: 'test-ml0-peer'
+          keystore_password: ${{ secrets.CL_KEYSTORE_PASSWORD }}
+          
+      - name: Verify Environment Setup
+        run: |
+          if [ -z "${{ steps.setup-environment.outputs.config_created }}" ]; then
+            echo "❌ Environment config not created"
+            exit 1
+          fi
+          
+          if [ -z "${{ steps.setup-environment.outputs.env_file_path }}" ]; then
+            echo "❌ Environment file path not set"
+            exit 1
+          fi
+          
+          echo "✅ Environment setup composite action works correctly"
