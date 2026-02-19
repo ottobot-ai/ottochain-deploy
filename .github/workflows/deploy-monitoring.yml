@@ -34,27 +34,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/hetzner
-          chmod 600 ~/.ssh/hetzner
+      - name: Checkout (needed for composite actions)
+        uses: actions/checkout@v4
 
-          for host in node1 node2 node3 services; do
-            case $host in
-              node1) ip="${{ secrets.HETZNER_NODE1_IP }}" ;;
-              node2) ip="${{ secrets.HETZNER_NODE2_IP }}" ;;
-              node3) ip="${{ secrets.HETZNER_NODE3_IP }}" ;;
-              services) ip="${{ secrets.HETZNER_SERVICES_IP }}" ;;
-            esac
-            cat >> ~/.ssh/config << EOF
-          Host $host
-            HostName $ip
-            User root
-            IdentityFile ~/.ssh/hetzner
-            StrictHostKeyChecking no
-          EOF
-          done
+      - name: Setup SSH
+        uses: ./.github/actions/setup-ssh
+        with:
+          ssh_key: ${{ secrets.HETZNER_SSH_KEY }}
+          node1_ip: ${{ secrets.HETZNER_NODE1_IP }}
+          node2_ip: ${{ secrets.HETZNER_NODE2_IP }}
+          node3_ip: ${{ secrets.HETZNER_NODE3_IP }}
+          services_ip: ${{ secrets.HETZNER_SERVICES_IP }}
+          hosts: nodes-and-services
 
       - name: Create monitoring directories
         run: |
