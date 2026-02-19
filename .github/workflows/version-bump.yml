@@ -58,8 +58,8 @@ jobs:
           COMPONENT="${{ steps.params.outputs.component }}"
           VERSION="${{ steps.params.outputs.version }}"
           
-          echo "Updating components.$COMPONENT to $VERSION"
-          yq -i ".components.$COMPONENT = \"$VERSION\"" versions.yaml
+          echo "Updating components.$COMPONENT.version to $VERSION"
+          yq -i ".components.$COMPONENT.version = \"$VERSION\"" versions.yaml
           
           echo "Updated versions.yaml:"
           cat versions.yaml
@@ -87,7 +87,7 @@ jobs:
           ERRORS=""
           for DEP in $(yq ".components.$COMPONENT.requires | keys | .[]" compatibility.yaml); do
             RANGE=$(yq ".components.$COMPONENT.requires.$DEP" compatibility.yaml)
-            CURRENT=$(yq ".components.$DEP" versions.yaml)
+            CURRENT=$(yq ".components.$DEP.version" versions.yaml)
             
             echo "  $DEP: need $RANGE, have $CURRENT"
             

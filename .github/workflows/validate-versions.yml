@@ -37,7 +37,7 @@ jobs:
           
           # Check all components have versions
           for comp in ottochain sdk services explorer monitoring; do
-            VERSION=$(yq ".components.$comp // \"\"" versions.yaml)
+            VERSION=$(yq ".components.$comp.version // \"\"" versions.yaml)
             if [ -z "$VERSION" ]; then
               echo "❌ Missing version for $comp"
               exit 1
@@ -61,13 +61,13 @@ jobs:
               continue
             fi
             
-            COMP_VERSION=$(yq ".components.$COMP" versions.yaml)
+            COMP_VERSION=$(yq ".components.$COMP.version" versions.yaml)
             echo "Checking $COMP ($COMP_VERSION) dependencies..."
             
             # Check each dependency
             for DEP in $(yq ".components.$COMP.requires | keys | .[]" compatibility.yaml 2>/dev/null || echo ""); do
               RANGE=$(yq ".components.$COMP.requires.$DEP" compatibility.yaml)
-              DEP_VERSION=$(yq ".components.$DEP" versions.yaml)
+              DEP_VERSION=$(yq ".components.$DEP.version" versions.yaml)
               
               echo "  → $DEP: need $RANGE, have $DEP_VERSION"
               
@@ -93,7 +93,7 @@ jobs:
           echo "📦 Verifying artifacts exist..."
           
           # Check GitHub releases
-          OTTO_VERSION=$(yq '.components.ottochain' versions.yaml)
+          OTTO_VERSION=$(yq '.components.ottochain.version' versions.yaml)
           echo "Checking ottochain v$OTTO_VERSION..."
           if gh release view "v$OTTO_VERSION" -R scasplte2/ottochain > /dev/null 2>&1; then
             echo "✅ ottochain v$OTTO_VERSION release exists"
@@ -102,7 +102,7 @@ jobs:
           fi
           
           # Check Docker images
-          SERVICES_VERSION=$(yq '.components.services' versions.yaml)
+          SERVICES_VERSION=$(yq '.components.services.version' versions.yaml)
           echo "Checking services v$SERVICES_VERSION..."
           # Note: Can't easily check GHCR without auth, skip for now
           
