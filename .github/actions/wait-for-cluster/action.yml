@@ -1,0 +1,148 @@
+name: Wait for Cluster with Robust Join
+description: Wait for tessellation nodes to join cluster with retry logic
+
+inputs:
+  layer:
+    description: 'Layer name (gl0, ml0, dl1, etc.)'
+    required: true
+  ports:
+    description: 'Space-separated list of public HTTP ports'
+    required: true
+  join_target_port:
+    description: 'Port of the initial node to join to (for non-genesis nodes)'
+    required: false
+    default: ''
+  ssh_host:
+    description: 'SSH host to run commands on (leave empty for local)'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Wait for ${{ inputs.layer }} cluster
+      shell: bash
+      env:
+        LAYER: ${{ inputs.layer }}
+        PORTS: ${{ inputs.ports }}
+        JOIN_TARGET_PORT: ${{ inputs.join_target_port }}
+        SSH_HOST: ${{ inputs.ssh_host }}
+      run: |
+        MAX_RESPONSIVE_WAIT=120
+        MAX_JOINABLE_WAIT=60
+        MAX_JOIN_ATTEMPTS=5
+        JOIN_RETRY_DELAY=5
+        MAX_READY_WAIT=90
+
+        log() { echo "[$(date '+%H:%M:%S')] $*"; }
+        error() { echo "[$(date '+%H:%M:%S')] ERROR: $*" >&2; }
+        
+        # Wrapper for running commands (local or remote)
+        run_cmd() {
+          if [ -n "$SSH_HOST" ]; then
+            ssh "$SSH_HOST" "$@"
+          else
+            eval "$@"
+          fi
+        }
+
+        wait_responsive() {
+          local port=$1
+          local name=$2
+          log "Waiting for $name (port $port) to be responsive..."
+          for i in $(seq 1 $MAX_RESPONSIVE_WAIT); do
+            if run_cmd "curl -sf http://localhost:$port/node/info" | jq -e '.state' >/dev/null 2>&1; then
+              log "$name responding after ${i}s"
+              return 0
+            fi
+            sleep 1
+          done
+          error "$name not responsive after ${MAX_RESPONSIVE_WAIT}s"
+          return 1
+        }
+
+        wait_joinable() {
+          local port=$1
+          local name=$2
+          log "Waiting for $name to leave SessionStarted state..."
+          for i in $(seq 1 $MAX_JOINABLE_WAIT); do
+            local state=$(run_cmd "curl -sf http://localhost:$port/node/info" | jq -r '.state // "unknown"' 2>/dev/null || echo "error")
+            if [ "$state" != "SessionStarted" ] && [ "$state" != "error" ] && [ "$state" != "unknown" ]; then
+              log "$name in state '$state', ready to join"
+              return 0
+            fi
+            sleep 2
+          done
+          error "$name still in SessionStarted after ${MAX_JOINABLE_WAIT}s"
+          return 1
+        }
+
+        join_cluster() {
+          local cli_port=$1
+          local target_port=$2
+          local name=$3
+          
+          local target_id=$(run_cmd "curl -sf http://localhost:$target_port/node/info" | jq -r '.id' 2>/dev/null)
+          if [ -z "$target_id" ] || [ "$target_id" = "null" ]; then
+            error "Could not get peer ID from target node on port $target_port"
+            return 1
+          fi
+          
+          local target_p2p_port=$((target_port + 1))
+          log "Joining $name to cluster via port $cli_port -> target $target_id"
+          
+          for attempt in $(seq 1 $MAX_JOIN_ATTEMPTS); do
+            local response=$(run_cmd "curl -sf -X POST http://localhost:$cli_port/cluster/join \
+              -H 'Content-Type: application/json' \
+              -d '{\"id\":\"$target_id\", \"ip\": \"127.0.0.1\", \"p2pPort\": $target_p2p_port}'" 2>&1 || true)
+            
+            if [ -z "$response" ] || echo "$response" | grep -qi "success\|ok\|joined\|already"; then
+              log "$name join request accepted (attempt $attempt)"
+              return 0
+            fi
+            
+            log "$name join attempt $attempt/$MAX_JOIN_ATTEMPTS failed: $response"
+            [ $attempt -lt $MAX_JOIN_ATTEMPTS ] && sleep $JOIN_RETRY_DELAY
+          done
+          
+          error "$name failed to join cluster after $MAX_JOIN_ATTEMPTS attempts"
+          return 1
+        }
+
+        wait_ready() {
+          local port=$1
+          local name=$2
+          log "Waiting for $name to reach Ready state..."
+          for i in $(seq 1 $MAX_READY_WAIT); do
+            local state=$(run_cmd "curl -sf http://localhost:$port/node/info" | jq -r '.state' 2>/dev/null || echo "error")
+            if [ "$state" = "Ready" ]; then
+              log "$name Ready after ${i}s"
+              return 0
+            fi
+            sleep 2
+          done
+          error "$name not Ready after ${MAX_READY_WAIT}s (last state: $state)"
+          return 1
+        }
+
+        log "Starting $LAYER cluster setup for ports: $PORTS"
+        FIRST_PORT=""
+        
+        for port in $PORTS; do
+          node_name="${LAYER}-$((($port % 100) / 10))"
+          cli_port=$((port + 2))
+          
+          wait_responsive "$port" "$node_name" || exit 1
+          wait_joinable "$port" "$node_name" || exit 1
+          
+          if [ -n "$FIRST_PORT" ] && [ -n "$JOIN_TARGET_PORT" ]; then
+            join_cluster "$cli_port" "$JOIN_TARGET_PORT" "$node_name" || exit 1
+          else
+            FIRST_PORT="$port"
+            log "$node_name is initial node, skipping join"
+          fi
+          
+          wait_ready "$port" "$node_name" || exit 1
+        done
+
+        log "✓ All $LAYER nodes ready"
