@@ -1,33 +1,88 @@
 # OttoChain Ecosystem Versions
-# This file is the source of truth for deployed component versions.
+# ============================
+# Single source of truth for all component versions.
 # Changes trigger compatibility validation and deployment workflows.
+#
+# Lifecycle:
+#   1. Tag release in component repo (e.g., ottochain-services v0.4.0)
+#   2. CI builds/pushes artifact (Docker image or JAR)
+#   3. version-bump.yml updates this file automatically
+#   4. Merge triggers deploy-on-merge.yml → deploys to scratch env
 
-# Last updated: 2026-02-10
-# Updated by: release automation
+# Last updated: 2026-02-19
+# Updated by: version consolidation
 
+# === Component Versions ===
 components:
-  # Core metagraph (Scala) - the foundation
-  ottochain: "0.5.0"
-  # TypeScript SDK - client library
-  sdk: "0.2.1"
-  # Backend services (bridge, indexer, traffic-gen)
-  services: "0.4.0"
-  # Explorer UI
-  explorer: "0.4.1"
-  # Monitoring stack (Grafana, Prometheus configs)
-  monitoring: "0.1.0"
-# External dependencies
-dependencies:
-  tessellation: "v4.0.0-rc.2"
-  metakit: "main"
-# Deployment targets
+  # OttoChain metagraph (Scala) - builds JARs
+  ottochain:
+    version: "0.7.5"
+    repo: "scasplte2/ottochain"
+
+  # Tessellation SDK version (external dependency)
+  tessellation:
+    version: "4.0.0-rc.2"
+    repo: "Constellation-Labs/tessellation"
+
+  # OttoChain SDK (TypeScript) - published to npmjs.com as @ottochain/sdk
+  sdk:
+    version: "1.0.1"
+    repo: "ottobot-ai/ottochain-sdk"
+    package: "@ottochain/sdk"
+    registry: "https://registry.npmjs.org"
+
+  # OttoChain Services (TypeScript) - Docker image
+  services:
+    version: "0.4.0"
+    repo: "ottobot-ai/ottochain-services"
+    image: "ghcr.io/ottobot-ai/ottochain-services"
+
+  # OttoChain Explorer (TypeScript) - Docker image
+  explorer:
+    version: "0.4.1"
+    repo: "ottobot-ai/ottochain-explorer"
+    image: "ghcr.io/ottobot-ai/ottochain-explorer"
+
+  # OttoChain Monitoring (configs/dashboards)
+  monitoring:
+    version: "0.1.0"
+    repo: "ottobot-ai/ottochain-monitoring"
+
+# === Monitoring Tool Versions ===
+monitoring_tools:
+  prometheus: "v2.50.0"
+  alertmanager: "v0.27.0"
+  grafana: "10.3.1"
+  loki: "2.9.4"
+  promtail: "2.9.4"
+  node_exporter: "v1.7.0"
+  postgres_exporter: "v0.15.0"
+  redis_exporter: "v1.56.0"
+
+# === Infrastructure ===
+infra:
+  postgres: "16-alpine"
+  redis: "7-alpine"
+  java: "21"
+
+# === Deployment Environments ===
 environments:
   scratch:
-    auto_deploy: true # Deploy on versions.yaml merge
+    auto_deploy: true
     cluster: hetzner
   staging:
-    auto_deploy: false # Manual promotion
+    auto_deploy: false
     cluster: hetzner
   production:
-    auto_deploy: false # Manual promotion
-    cluster: null # TBD
+    auto_deploy: false
+    cluster: null
+
+# === Deployed State (updated by CI after successful deploy) ===
+deployed:
+  scratch:
+    ottochain: ""
+    services: ""
+    explorer: ""
+    monitoring: ""
+    timestamp: ""
+    workflow_run: ""

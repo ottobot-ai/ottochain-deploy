@@ -156,11 +156,11 @@ jobs:
           TARGET_ENV: ${{ steps.target.outputs.env }}
         run: |
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          yq -i ".deployed.${TARGET_ENV}.ottochain = .components.ottochain.version" versions.yml
-          yq -i ".deployed.${TARGET_ENV}.services = .components.services.version" versions.yml
-          yq -i ".deployed.${TARGET_ENV}.explorer = .components.explorer.version" versions.yml
-          yq -i ".deployed.${TARGET_ENV}.timestamp = \"$TIMESTAMP\"" versions.yml
-          yq -i ".deployed.${TARGET_ENV}.workflow_run = \"${{ github.run_id }}\"" versions.yml
+          yq -i ".deployed.${TARGET_ENV}.ottochain = .components.ottochain.version" versions.yaml
+          yq -i ".deployed.${TARGET_ENV}.services = .components.services.version" versions.yaml
+          yq -i ".deployed.${TARGET_ENV}.explorer = .components.explorer.version" versions.yaml
+          yq -i ".deployed.${TARGET_ENV}.timestamp = \"$TIMESTAMP\"" versions.yaml
+          yq -i ".deployed.${TARGET_ENV}.workflow_run = \"${{ github.run_id }}\"" versions.yaml
 
       - name: Commit changes
         env:
@@ -169,7 +169,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add COMPATIBILITY.md versions.yml
+          git add COMPATIBILITY.md versions.yaml
           git diff --staged --quiet || git commit -m "chore: update ${TARGET_ENV} compatibility matrix [skip ci]"
           git push origin "${TARGET_BRANCH}"
 
