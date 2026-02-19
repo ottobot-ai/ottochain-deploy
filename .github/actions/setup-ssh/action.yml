@@ -1,0 +1,75 @@
+name: Setup SSH
+description: |
+  Write the Hetzner SSH private key and configure ~/.ssh/config entries
+  for each requested host alias. Used by all deploy workflows to avoid
+  repeating the same ~20-line setup block.
+
+inputs:
+  ssh_key:
+    description: 'Hetzner SSH private key (PEM)'
+    required: true
+  node1_ip:
+    description: 'IP address for node1'
+    required: false
+    default: ''
+  node2_ip:
+    description: 'IP address for node2'
+    required: false
+    default: ''
+  node3_ip:
+    description: 'IP address for node3'
+    required: false
+    default: ''
+  services_ip:
+    description: 'IP address for the services host'
+    required: false
+    default: ''
+  hosts:
+    description: |
+      Which host aliases to write into ~/.ssh/config.
+      Options: 'nodes' (node1-3), 'services', 'nodes-and-services' (all four).
+    required: false
+    default: 'nodes'
+
+runs:
+  using: composite
+  steps:
+    - name: Write SSH key
+      shell: bash
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ inputs.ssh_key }}" > ~/.ssh/hetzner
+        chmod 600 ~/.ssh/hetzner
+
+    - name: Configure SSH hosts
+      shell: bash
+      run: |
+        HOSTS="${{ inputs.hosts }}"
+
+        write_host() {
+          local alias="$1"
+          local ip="$2"
+          if [ -z "$ip" ]; then
+            echo "::warning::setup-ssh: IP for '$alias' is empty — skipping host entry"
+            return
+          fi
+          cat >> ~/.ssh/config << EOF
+        Host $alias
+          HostName $ip
+          User root
+          IdentityFile ~/.ssh/hetzner
+          StrictHostKeyChecking no
+        EOF
+        }
+
+        if [ "$HOSTS" = "nodes" ] || [ "$HOSTS" = "nodes-and-services" ]; then
+          write_host node1 "${{ inputs.node1_ip }}"
+          write_host node2 "${{ inputs.node2_ip }}"
+          write_host node3 "${{ inputs.node3_ip }}"
+        fi
+
+        if [ "$HOSTS" = "services" ] || [ "$HOSTS" = "nodes-and-services" ]; then
+          write_host services "${{ inputs.services_ip }}"
+        fi
+
+        echo "✅ SSH configured for: $HOSTS"

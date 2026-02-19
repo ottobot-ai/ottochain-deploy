@@ -1,0 +1,58 @@
+name: Wait for Cluster Size
+description: |
+  Poll a tessellation node's /cluster/info endpoint via SSH until the cluster
+  reaches the expected number of nodes. Used to ensure consensus layers are
+  fully formed before proceeding.
+
+inputs:
+  ssh_host:
+    description: 'SSH host alias to poll (e.g. node1)'
+    required: true
+  port:
+    description: 'HTTP port of the tessellation layer (e.g. 9000 for GL0)'
+    required: true
+  layer_name:
+    description: 'Display name used in log messages (e.g. GL0, ML0)'
+    required: true
+  expected_size:
+    description: 'Expected number of nodes in the cluster'
+    required: false
+    default: '3'
+  max_attempts:
+    description: 'Maximum number of 5-second poll attempts before failing'
+    required: false
+    default: '60'
+
+outputs:
+  cluster_size:
+    description: 'Final cluster size when completed'
+    value: ${{ steps.poll.outputs.cluster_size }}
+
+runs:
+  using: composite
+  steps:
+    - name: Poll cluster size
+      id: poll
+      shell: bash
+      run: |
+        MAX="${{ inputs.max_attempts }}"
+        PORT="${{ inputs.port }}"
+        HOST="${{ inputs.ssh_host }}"
+        NAME="${{ inputs.layer_name }}"
+        EXPECTED="${{ inputs.expected_size }}"
+
+        echo "Waiting for $NAME cluster to reach $EXPECTED nodes (max ${MAX} attempts × 5s)..."
+        for i in $(seq 1 "$MAX"); do
+          CLUSTER_SIZE=$(ssh "$HOST" "curl -sf http://localhost:$PORT/cluster/info | jq length" || echo "0")
+          echo "$NAME cluster size: $CLUSTER_SIZE (attempt $i/$MAX)"
+          if [ "$CLUSTER_SIZE" -ge "$EXPECTED" ]; then
+            echo "✓ $NAME cluster has $CLUSTER_SIZE nodes"
+            echo "cluster_size=$CLUSTER_SIZE" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$i" = "$MAX" ]; then
+            echo "::error::$NAME cluster failed to reach $EXPECTED nodes after $((MAX * 5))s"
+            exit 1
+          fi
+          sleep 5
+        done

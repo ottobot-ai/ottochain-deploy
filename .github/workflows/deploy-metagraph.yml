@@ -62,48 +62,29 @@ jobs:
     name: Deploy Full Stack
     runs-on: ubuntu-latest
     outputs:
-      gl0_peer_id: ${{ steps.start-gl0.outputs.gl0_peer_id }}
-      ml0_peer_id: ${{ steps.start-ml0.outputs.ml0_peer_id }}
-      token_id: ${{ steps.start-ml0.outputs.token_id }}
+      gl0_peer_id: ${{ steps.wait-gl0.outputs.peer_id }}
+      ml0_peer_id: ${{ steps.wait-ml0.outputs.peer_id }}
+      token_id: ${{ steps.ml0-validators.outputs.token_id }}
 
     steps:
+      - name: Checkout (needed for composite actions)
+        uses: actions/checkout@v4
+
       - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/hetzner
-          chmod 600 ~/.ssh/hetzner
+        uses: ./.github/actions/setup-ssh
+        with:
+          ssh_key: ${{ secrets.HETZNER_SSH_KEY }}
+          node1_ip: ${{ secrets.HETZNER_NODE1_IP }}
+          node2_ip: ${{ secrets.HETZNER_NODE2_IP }}
+          node3_ip: ${{ secrets.HETZNER_NODE3_IP }}
+          hosts: nodes
 
-          for host in node1 node2 node3; do
-            case $host in
-              node1) ip="${{ secrets.HETZNER_NODE1_IP }}" ;;
-              node2) ip="${{ secrets.HETZNER_NODE2_IP }}" ;;
-              node3) ip="${{ secrets.HETZNER_NODE3_IP }}" ;;
-            esac
-            cat >> ~/.ssh/config << EOF
-          Host $host
-            HostName $ip
-            User root
-            IdentityFile ~/.ssh/hetzner
-            StrictHostKeyChecking no
-          EOF
-          done
-
-      - name: Login to GHCR on all nodes
-        run: |
-          for host in node1 node2 node3; do
-            ssh $host "echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u ottobot-ai --password-stdin" &
-          done
-          wait
-          echo "✅ GHCR login complete on all nodes"
-
-      - name: Pull image on all nodes
-        run: |
-          for host in node1 node2 node3; do
-            echo "Pulling image on $host..."
-            ssh $host "docker pull ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}" &
-          done
-          wait
-          echo "✅ Image pulled on all nodes"
+      - name: Login to GHCR and pull image on all nodes
+        uses: ./.github/actions/docker-login-pull
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          image: ${{ env.IMAGE }}
+          image_tag: ${{ env.IMAGE_TAG }}
 
       - name: Stop all containers
         run: |
@@ -217,7 +198,11 @@ jobs:
           ssh node1 "cat /opt/ottochain/genesis/gl0-genesis.csv"
           echo "✅ GL0 genesis file created"
 
-      - name: Start GL0 Genesis
+      # ── GL0 Genesis Node ────────────────────────────────────────────────────
+      # Split into two steps: start the container, then wait for Ready.
+      # This lets wait-for-node-ready run as a reusable composite action.
+
+      - name: Start GL0 container
         id: start-gl0
         run: |
           NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
@@ -243,27 +228,21 @@ jobs:
             -e JAVA_OPTS='-Xmx8g -Xms4g' \
             ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
 
-          echo "Waiting for GL0 to become Ready..."
-          for i in $(seq 1 90); do
-            state=$(ssh node1 'curl -sf http://localhost:9000/node/info | jq -r .state' || echo "")
-            if [ "$state" = "Ready" ]; then
-              echo "GL0 Ready after $((i*5))s"
-              break
-            fi
-            if [ "$i" = "90" ]; then echo "::error::GL0 failed to reach Ready"; exit 1; fi
-            sleep 5
-          done
-
-          GL0_PEER_ID=$(ssh node1 'curl -sf http://localhost:9000/node/info | jq -r .id')
-          echo "gl0_peer_id=$GL0_PEER_ID" >> "$GITHUB_OUTPUT"
-          echo "GL0 Peer ID: $GL0_PEER_ID"
+      - name: Wait for GL0 to be Ready
+        id: wait-gl0
+        uses: ./.github/actions/wait-for-node-ready
+        with:
+          ssh_host: node1
+          port: '9000'
+          node_name: GL0
+          max_attempts: '90'
 
       - name: Start GL0 Validators
         run: |
           NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
           NODE2_IP="${{ secrets.HETZNER_NODE2_IP }}"
           NODE3_IP="${{ secrets.HETZNER_NODE3_IP }}"
-          GL0_PEER_ID="${{ steps.start-gl0.outputs.gl0_peer_id }}"
+          GL0_PEER_ID="${{ steps.wait-gl0.outputs.peer_id }}"
 
           # CRITICAL: Each node needs a DIFFERENT key for consensus
           # node2 uses keys2, node3 uses keys3
@@ -292,52 +271,31 @@ jobs:
 
           sleep 20
 
-          # CLI port binds to container's 127.0.0.1, must use docker exec
-          for host in node2 node3; do
-            ssh $host "docker exec gl0 curl -sf -X POST http://127.0.0.1:9002/cluster/join \
-              -H 'Content-Type: application/json' \
-              -d '{\"id\": \"${GL0_PEER_ID}\", \"ip\": \"${NODE1_IP}\", \"p2pPort\": 9001}'" || true
-          done
+      - name: Join GL0 validators to cluster
+        uses: ./.github/actions/join-cluster
+        with:
+          hosts: 'node2 node3'
+          cli_port: '9002'
+          p2p_port: '9001'
+          public_port: '9000'
+          peer_id: ${{ steps.wait-gl0.outputs.peer_id }}
+          peer_ip: ${{ secrets.HETZNER_NODE1_IP }}
+          layer_name: GL0
 
-          sleep 15
+      - name: Wait for GL0 cluster
+        uses: ./.github/actions/wait-for-cluster-size
+        with:
+          ssh_host: node1
+          port: '9000'
+          layer_name: GL0
+          expected_size: '3'
 
-          # CRITICAL: Wait for GL0 cluster to be fully operational before proceeding
-          # ML0 and all L1 layers depend on GL0 being stable
-          echo "Waiting for GL0 cluster to reach 3 nodes..."
-          for i in $(seq 1 60); do
-            CLUSTER_SIZE=$(ssh node1 'curl -sf http://localhost:9000/cluster/info | jq length' || echo "0")
-            echo "GL0 cluster size: $CLUSTER_SIZE (attempt $i/60)"
-            if [ "$CLUSTER_SIZE" -ge 3 ]; then
-              echo "✓ GL0 cluster has $CLUSTER_SIZE nodes"
-              break
-            fi
-            if [ "$i" = "60" ]; then
-              echo "::error::GL0 cluster failed to reach 3 nodes after 5 minutes"
-              exit 1
-            fi
-            sleep 5
-          done
-
-          # Verify all GL0 nodes are Ready (with retries - nodes may still be syncing)
-          echo "Verifying all GL0 nodes are Ready..."
-          for host in node1 node2 node3; do
-            echo "Waiting for GL0 on $host to reach Ready..."
-            for attempt in $(seq 1 60); do
-              STATE=$(ssh $host 'curl -sf http://localhost:9000/node/info | jq -r .state' || echo "DOWN")
-              if [ "$STATE" = "Ready" ]; then
-                echo "✓ GL0 $host is Ready"
-                break
-              fi
-              if [ "$attempt" = "60" ]; then
-                echo "::error::GL0 on $host failed to reach Ready after 5 minutes (state: $STATE)"
-                ssh $host 'docker logs gl0 2>&1 | tail -30' || true
-                exit 1
-              fi
-              echo "GL0 $host: $STATE (attempt $attempt/60)"
-              sleep 5
-            done
-          done
-          echo "✅ GL0 cluster fully operational (3/3 Ready)"
+      - name: Verify GL0 cluster Ready
+        uses: ./.github/actions/verify-cluster-ready
+        with:
+          hosts: 'node1 node2 node3'
+          port: '9000'
+          layer_name: GL0
 
       - name: Start GL1
         if: ${{ inputs.enable_gl1 == true }}
@@ -345,7 +303,7 @@ jobs:
           NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
           NODE2_IP="${{ secrets.HETZNER_NODE2_IP }}"
           NODE3_IP="${{ secrets.HETZNER_NODE3_IP }}"
-          GL0_PEER_ID="${{ steps.start-gl0.outputs.gl0_peer_id }}"
+          GL0_PEER_ID="${{ steps.wait-gl0.outputs.peer_id }}"
 
           # IS_INITIAL=true for first GL1 - auto-detects run-initial-validator vs run-validator
           ssh node1 << EOF
@@ -429,7 +387,7 @@ jobs:
             ssh $host 'sync'  # Force disk sync
             echo "✓ $host ML0/CL1/DL1 data cleaned"
           done
-          GL0_PEER_ID="${{ steps.start-gl0.outputs.gl0_peer_id }}"
+          GL0_PEER_ID="${{ steps.wait-gl0.outputs.peer_id }}"
 
           # Download tessellation cl-wallet.jar v4.x if not present (has show-address/show-id commands)
           ssh node1 "test -f /opt/ottochain/cl-wallet.jar || curl -sL -o /opt/ottochain/cl-wallet.jar \
@@ -501,13 +459,15 @@ jobs:
           done
           echo "✅ ML0 genesis snapshot created, verified, and distributed"
 
-      - name: Start ML0
+      # ── ML0 Genesis Node ────────────────────────────────────────────────────
+      # Split into: start container → wait for Ready → start validators.
+      # Separating the wait step lets us use the reusable composite action.
+
+      - name: Start ML0 container
         id: start-ml0
         run: |
           NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
-          NODE2_IP="${{ secrets.HETZNER_NODE2_IP }}"
-          NODE3_IP="${{ secrets.HETZNER_NODE3_IP }}"
-          GL0_PEER_ID="${{ steps.start-gl0.outputs.gl0_peer_id }}"
+          GL0_PEER_ID="${{ steps.wait-gl0.outputs.peer_id }}"
 
           # Use entrypoint with IS_INITIAL=true - auto-detects run-genesis vs run-rollback
           # Genesis file at /ottochain/genesis/genesis.snapshot is auto-discovered
@@ -538,19 +498,23 @@ jobs:
             -e JAVA_OPTS='-Xmx8g -Xms4g' \
             ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
 
-          echo "Waiting for ML0 to become Ready..."
-          for i in $(seq 1 90); do
-            state=$(ssh node1 'curl -sf http://localhost:9200/node/info | jq -r .state' || echo "")
-            if [ "$state" = "Ready" ]; then
-              echo "ML0 Ready after $((i*5))s"
-              break
-            fi
-            if [ "$i" = "90" ]; then echo "::error::ML0 failed to reach Ready"; exit 1; fi
-            sleep 5
-          done
+      - name: Wait for ML0 to be Ready
+        id: wait-ml0
+        uses: ./.github/actions/wait-for-node-ready
+        with:
+          ssh_host: node1
+          port: '9200'
+          node_name: ML0
+          max_attempts: '90'
 
-          ML0_PEER_ID=$(ssh node1 'curl -sf http://localhost:9200/node/info | jq -r .id')
-          echo "ml0_peer_id=$ML0_PEER_ID" >> "$GITHUB_OUTPUT"
+      - name: Start ML0 validators and form cluster
+        id: ml0-validators
+        run: |
+          NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
+          NODE2_IP="${{ secrets.HETZNER_NODE2_IP }}"
+          NODE3_IP="${{ secrets.HETZNER_NODE3_IP }}"
+          GL0_PEER_ID="${{ steps.wait-gl0.outputs.peer_id }}"
+          ML0_PEER_ID="${{ steps.wait-ml0.outputs.peer_id }}"
 
           # v4.x doesn't expose .address in /node/info, read from genesis file
           TOKEN_ID=$(ssh node1 'cat /opt/ottochain/genesis/genesis.address')
@@ -603,94 +567,39 @@ jobs:
 
           sleep 25
 
-          # Wait for ML0 validators to reach ReadyToJoin state before attempting join
-          echo "Waiting for ML0 validators to reach ReadyToJoin state..."
-          for host in node2 node3; do
-            for i in $(seq 1 30); do
-              STATE=$(ssh "$host" 'curl -sf http://localhost:9200/node/state 2>/dev/null | tr -d \"' || echo "unknown")
-              echo "$host ML0 state: $STATE (attempt $i/30)"
-              if [ "$STATE" = "ReadyToJoin" ] || [ "$STATE" = "Observing" ] || [ "$STATE" = "Ready" ]; then
-                echo "✓ $host ML0 ready"
-                break
-              fi
-              if [ "$i" = "30" ]; then
-                echo "::warning::$host ML0 did not reach ReadyToJoin state (current: $STATE)"
-              fi
-              sleep 5
-            done
-          done
+      - name: Join ML0 validators to cluster
+        uses: ./.github/actions/join-cluster
+        with:
+          hosts: 'node2 node3'
+          cli_port: '9202'
+          p2p_port: '9201'
+          public_port: '9200'
+          peer_id: ${{ steps.wait-ml0.outputs.peer_id }}
+          peer_ip: ${{ secrets.HETZNER_NODE1_IP }}
+          layer_name: ML0
 
-          # Join ML0 validators to cluster
-          echo "Joining ML0 validators to cluster..."
-          echo "ML0_PEER_ID: ${ML0_PEER_ID:0:32}..."
-          echo "NODE1_IP: ${NODE1_IP}"
-          
-          # Build join payload once (expands variables locally)
-          JOIN_PAYLOAD=$(printf '{"id": "%s", "ip": "%s", "p2pPort": 9201}' "$ML0_PEER_ID" "$NODE1_IP")
-          echo "JOIN_PAYLOAD: $JOIN_PAYLOAD"
-          
-          for host in node2 node3; do
-            echo "Joining $host ML0..."
-            # Pass pre-built payload to avoid quoting issues
-            if ssh "$host" "docker exec ml0 curl -sf -X POST http://127.0.0.1:9202/cluster/join -H 'Content-Type: application/json' -d '$JOIN_PAYLOAD'"; then
-              echo "✓ $host ML0 join initiated"
-            else
-              echo "⚠ $host ML0 join failed (may already be joined)"
-            fi
-          done
-          
-          # CRITICAL: Wait for ML0 cluster to be fully operational before proceeding
-          # CL1 and DL1 depend on ML0 being stable
-          echo "Waiting for ML0 cluster to reach 3 nodes..."
-          for i in $(seq 1 60); do
-            ML0_CLUSTER_SIZE=$(ssh node1 'curl -sf http://localhost:9200/cluster/info | jq length' || echo "0")
-            echo "ML0 cluster size: $ML0_CLUSTER_SIZE (attempt $i/60)"
-            if [ "$ML0_CLUSTER_SIZE" -ge 3 ]; then
-              echo "✓ ML0 cluster has $ML0_CLUSTER_SIZE nodes"
-              break
-            fi
-            if [ "$i" = "60" ]; then
-              echo "::error::ML0 cluster failed to reach 3 nodes after 5 minutes"
-              # Log node states for debugging
-              for host in node1 node2 node3; do
-                STATE=$(ssh $host 'curl -sf http://localhost:9200/node/info | jq -r .state' 2>/dev/null || echo "DOWN")
-                echo "ML0 $host: $STATE"
-                # Check for ordinal errors in logs
-                ssh $host 'docker logs ml0 2>&1 | tail -20 | grep -i "ordinal\|error" || true'
-              done
-              exit 1
-            fi
-            sleep 5
-          done
+      - name: Wait for ML0 cluster
+        uses: ./.github/actions/wait-for-cluster-size
+        with:
+          ssh_host: node1
+          port: '9200'
+          layer_name: ML0
+          expected_size: '3'
 
-          # Verify all ML0 nodes are Ready (with retries - nodes may still be syncing)
-          echo "Verifying all ML0 nodes are Ready..."
-          for host in node1 node2 node3; do
-            echo "Waiting for ML0 on $host to reach Ready..."
-            for attempt in $(seq 1 60); do
-              STATE=$(ssh $host 'curl -sf http://localhost:9200/node/info | jq -r .state' || echo "DOWN")
-              if [ "$STATE" = "Ready" ]; then
-                echo "✓ ML0 $host is Ready"
-                break
-              fi
-              if [ "$attempt" = "60" ]; then
-                echo "::error::ML0 on $host failed to reach Ready after 5 minutes (state: $STATE)"
-                ssh $host 'docker logs ml0 2>&1 | tail -30' || true
-                exit 1
-              fi
-              echo "ML0 $host: $STATE (attempt $attempt/60)"
-              sleep 5
-            done
-          done
-          echo "✅ ML0 cluster fully operational (3/3 Ready)"
+      - name: Verify ML0 cluster Ready
+        uses: ./.github/actions/verify-cluster-ready
+        with:
+          hosts: 'node1 node2 node3'
+          port: '9200'
+          layer_name: ML0
 
       - name: Start CL1
         run: |
           NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
           NODE2_IP="${{ secrets.HETZNER_NODE2_IP }}"
           NODE3_IP="${{ secrets.HETZNER_NODE3_IP }}"
-          GL0_PEER_ID="${{ steps.start-gl0.outputs.gl0_peer_id }}"
-          ML0_PEER_ID="${{ steps.start-ml0.outputs.ml0_peer_id }}"
+          GL0_PEER_ID="${{ steps.wait-gl0.outputs.peer_id }}"
+          ML0_PEER_ID="${{ steps.wait-ml0.outputs.peer_id }}"
           TOKEN_ID=$(ssh node1 'cat /opt/ottochain/genesis/genesis.address')
           echo "Token ID: $TOKEN_ID"
 
@@ -790,8 +699,8 @@ jobs:
           NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
           NODE2_IP="${{ secrets.HETZNER_NODE2_IP }}"
           NODE3_IP="${{ secrets.HETZNER_NODE3_IP }}"
-          GL0_PEER_ID="${{ steps.start-gl0.outputs.gl0_peer_id }}"
-          ML0_PEER_ID="${{ steps.start-ml0.outputs.ml0_peer_id }}"
+          GL0_PEER_ID="${{ steps.wait-gl0.outputs.peer_id }}"
+          ML0_PEER_ID="${{ steps.wait-ml0.outputs.peer_id }}"
           TOKEN_ID=$(ssh node1 'cat /opt/ottochain/genesis/genesis.address')
 
           # IS_INITIAL=true for first DL1 - auto-detects run-initial-validator vs run-validator
@@ -892,25 +801,17 @@ jobs:
     if: always() && needs.deploy.result == 'success'
 
     steps:
+      - name: Checkout (needed for composite actions)
+        uses: actions/checkout@v4
+
       - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/hetzner
-          chmod 600 ~/.ssh/hetzner
-          for host in node1 node2 node3; do
-            case $host in
-              node1) ip="${{ secrets.HETZNER_NODE1_IP }}" ;;
-              node2) ip="${{ secrets.HETZNER_NODE2_IP }}" ;;
-              node3) ip="${{ secrets.HETZNER_NODE3_IP }}" ;;
-            esac
-            cat >> ~/.ssh/config << EOF
-          Host $host
-            HostName $ip
-            User root
-            IdentityFile ~/.ssh/hetzner
-            StrictHostKeyChecking no
-          EOF
-          done
+        uses: ./.github/actions/setup-ssh
+        with:
+          ssh_key: ${{ secrets.HETZNER_SSH_KEY }}
+          node1_ip: ${{ secrets.HETZNER_NODE1_IP }}
+          node2_ip: ${{ secrets.HETZNER_NODE2_IP }}
+          node3_ip: ${{ secrets.HETZNER_NODE3_IP }}
+          hosts: nodes
 
       - name: Check all layers
         run: |

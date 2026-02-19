@@ -1,0 +1,50 @@
+name: Verify Cluster Ready
+description: |
+  Verify all nodes in a tessellation cluster have reached Ready state.
+  Polls each host's /node/info endpoint until Ready or timeout.
+
+inputs:
+  hosts:
+    description: 'Space-separated SSH host aliases (e.g. "node1 node2 node3")'
+    required: true
+  port:
+    description: 'HTTP port of the tessellation layer (e.g. 9000 for GL0)'
+    required: true
+  layer_name:
+    description: 'Display name used in log messages (e.g. GL0, ML0)'
+    required: true
+  max_attempts:
+    description: 'Maximum number of 5-second poll attempts per host'
+    required: false
+    default: '60'
+
+runs:
+  using: composite
+  steps:
+    - name: Verify all nodes Ready
+      shell: bash
+      run: |
+        HOSTS="${{ inputs.hosts }}"
+        PORT="${{ inputs.port }}"
+        NAME="${{ inputs.layer_name }}"
+        MAX="${{ inputs.max_attempts }}"
+
+        echo "Verifying all $NAME nodes are Ready..."
+        for host in $HOSTS; do
+          echo "Waiting for $NAME on $host to reach Ready..."
+          for attempt in $(seq 1 "$MAX"); do
+            STATE=$(ssh "$host" "curl -sf http://localhost:$PORT/node/info | jq -r .state" || echo "DOWN")
+            if [ "$STATE" = "Ready" ]; then
+              echo "✓ $NAME $host is Ready"
+              break
+            fi
+            if [ "$attempt" = "$MAX" ]; then
+              echo "::error::$NAME on $host failed to reach Ready after $((MAX * 5))s (state: $STATE)"
+              ssh "$host" "docker logs ${NAME,,} 2>&1 | tail -30" || true
+              exit 1
+            fi
+            echo "$NAME $host: $STATE (attempt $attempt/$MAX)"
+            sleep 5
+          done
+        done
+        echo "✅ $NAME cluster fully operational (all nodes Ready)"
