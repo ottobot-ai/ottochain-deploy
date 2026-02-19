@@ -64,7 +64,7 @@ ssh root@<NODE_IP> 'crontab -l 2>/dev/null | grep -v "layer-watchdog" ; echo "*/
 ./coordinated-restart.sh --wipe
 
 # Specify nodes explicitly
-./coordinated-restart.sh --genesis-ip 5.78.90.207 --nodes "5.78.90.207 5.78.113.25 5.78.107.77"
+./coordinated-restart.sh --genesis-ip <NODE1_IP> --nodes "<NODE1_IP> <NODE2_IP> <NODE3_IP>"
 ```
 
 ## Configuration

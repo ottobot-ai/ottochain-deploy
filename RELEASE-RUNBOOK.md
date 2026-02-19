@@ -159,12 +159,12 @@ After the `versions.yaml` PR merges, verify:
 gh run list --repo ottobot-ai/ottochain-deploy --limit 5
 
 # Verify services health
-curl -s http://5.78.121.248:3030/health | jq .
-curl -s http://5.78.121.248:3031/health | jq .
+curl -s http://${SERVICES_IP}:3030/health | jq .
+curl -s http://${SERVICES_IP}:3031/health | jq .
 
 # Check cluster state
-curl -s http://5.78.90.207:9000/node/info | jq -r .state   # GL0
-curl -s http://5.78.107.77:9200/node/info | jq -r .state   # ML0
+curl -s http://${NODE1_IP}:9000/node/info | jq -r .state   # GL0
+curl -s http://${NODE3_IP}:9200/node/info | jq -r .state   # ML0
 ```
 
 ---
@@ -174,7 +174,7 @@ curl -s http://5.78.107.77:9200/node/info | jq -r .state   # ML0
 - [ ] All Docker images tagged and pullable
 - [ ] `versions.yaml` updated in `ottochain-deploy`
 - [ ] `COMPATIBILITY.md` regenerated
-- [ ] Scratch environment healthy (monitor: `http://5.78.121.248:3032`)
+- [ ] Scratch environment healthy (monitor: `http://${SERVICES_IP}:3032`)
 - [ ] Smoke tests passed (see `smoke-test.yml` workflow)
 - [ ] Release notes shared with team (post in Discord #releases or Telegram)
 
@@ -187,7 +187,7 @@ echo "🚀 OttoChain v0.8.0 released!
 - sdk: v0.3.0 (delegation helpers, fiber subscription)
 - services: v0.4.0 (rejection notifications, metrics)
 - explorer: v0.4.0 (rejection history UI)
-Deployed to scratch. Monitor: http://5.78.121.248:3032"
+Deployed to scratch. Monitor: http://${SERVICES_IP}:3032"
 ```
 
 ---
@@ -245,7 +245,7 @@ git push
 
 ```bash
 # SSH to services host
-ssh -i ~/.ssh/hetzner_ottobot root@5.78.121.248
+ssh -i ~/.ssh/hetzner_ottobot root@${SERVICES_IP}
 
 # Pull previous image tag
 docker pull ghcr.io/ottobot-ai/ottochain-services:v0.3.5  # previous good tag
@@ -354,7 +354,7 @@ docker exec postgres psql -U otto -c "
 
 ```bash
 # Check all node states
-for ip in 5.78.90.207 5.78.113.25 5.78.107.77; do
+for ip in ${NODE1_IP} ${NODE2_IP} ${NODE3_IP}; do
   echo "=== Node $ip ==="; 
   curl -s http://$ip:9000/node/info | jq -r '"GL0: " + .state'
   curl -s http://$ip:9200/node/info | jq -r '"ML0: " + .state'
@@ -362,10 +362,10 @@ for ip in 5.78.90.207 5.78.113.25 5.78.107.77; do
 done
 
 # Check services
-curl -s http://5.78.121.248:3030/health | jq .    # Bridge
-curl -s http://5.78.121.248:3031/health | jq .    # Indexer
-curl -s http://5.78.121.248:4000/health | jq .    # Gateway
-curl -u admin:pass http://5.78.121.248:3032/api/status | jq .overall  # Monitor
+curl -s http://${SERVICES_IP}:3030/health | jq .    # Bridge
+curl -s http://${SERVICES_IP}:3031/health | jq .    # Indexer
+curl -s http://${SERVICES_IP}:4000/health | jq .    # Gateway
+curl -u admin:pass http://${SERVICES_IP}:3032/api/status | jq .overall  # Monitor
 
 # Current deployed versions
 cat ~/repos/ottochain-deploy/versions.yaml
@@ -385,10 +385,10 @@ cat ~/repos/ottochain-deploy/COMPATIBILITY.md
 | `production` | Live users | TBD | ❌ Manual promote |
 
 **Scratch node IPs:**
-- node1: `5.78.90.207` (GL0, CL1, DL1)
-- node2: `5.78.113.25` (CL1, DL1)
-- node3: `5.78.107.77` (ML0, CL1, DL1)
-- services: `5.78.121.248` (Bridge:3030, Indexer:3031, Gateway:4000, Monitor:3032)
+- node1: `${NODE1_IP}` (GL0, CL1, DL1)
+- node2: `${NODE2_IP}` (CL1, DL1)
+- node3: `${NODE3_IP}` (ML0, CL1, DL1)
+- services: `${SERVICES_IP}` (Bridge:3030, Indexer:3031, Gateway:4000, Monitor:3032)
 
 SSH access: `ssh -i ~/.ssh/hetzner_ottobot root@<IP>`
 
