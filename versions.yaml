@@ -11,7 +11,7 @@ components:
   # TypeScript SDK - client library
   sdk: "0.2.1"
   # Backend services (bridge, indexer, traffic-gen)
-  services: "0.3.6"
+  services: "0.4.0"
   # Explorer UI
   explorer: "0.3.3"
   # Monitoring stack (Grafana, Prometheus configs)
