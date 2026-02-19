@@ -1,5 +1,11 @@
 # Traffic generator - For testing/load simulation
 # Usage: docker compose -f compose/base.yml -f compose/services.yml -f compose/traffic.yml up -d
+#
+# Status API available at http://localhost:3033 when running
+# - GET /status - current stats (TPS, population, success rate)
+# - POST /start - start generating traffic
+# - POST /stop - stop generating traffic
+# - POST /config - update configuration
 
 services:
   traffic-generator:
@@ -8,14 +14,22 @@ services:
     restart: unless-stopped
     command: ["node", "packages/traffic-generator/dist/index.js"]
     environment:
+      # Endpoints
       BRIDGE_URL: ${BRIDGE_URL:-http://bridge:3030}
       ML0_URL: ${ML0_URL:-http://host.docker.internal:9200}
       DL1_URL: ${DL1_URL:-http://host.docker.internal:9400}
       REDIS_URL: redis://redis:6379
       # Traffic config
-      AGENT_COUNT: ${TRAFFIC_AGENT_COUNT:-50}
-      TPS_TARGET: ${TRAFFIC_TPS:-2}
+      MODE: ${TRAFFIC_MODE:-standard}
+      TARGET_TPS: ${TRAFFIC_TPS:-2}
+      TARGET_POPULATION: ${TRAFFIC_AGENT_COUNT:-50}
       WORKFLOW_WEIGHTS: ${TRAFFIC_WORKFLOW_WEIGHTS:-identity:30,token:25,fiber:20,marketplace:15,market:10}
+      # Status server
+      STATUS_PORT: 3033
+      # Set to 'false' to start traffic via API instead of auto-start
+      AUTO_START: ${TRAFFIC_AUTO_START:-true}
+    ports:
+      - "${TRAFFIC_STATUS_PORT:-3033}:3033"
     depends_on:
       - bridge
       - redis
