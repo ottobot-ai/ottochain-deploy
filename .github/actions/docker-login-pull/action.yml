@@ -1,0 +1,60 @@
+name: Docker Login and Pull
+description: |
+  Log in to GHCR on one or more remote SSH hosts (in parallel) and
+  optionally pull a Docker image. Used in deploy-metagraph.yml to avoid
+  repeating the parallel-SSH login/pull pattern.
+
+inputs:
+  github_token:
+    description: 'GitHub token with read:packages scope (used for GHCR login)'
+    required: true
+  image:
+    description: 'Full image name to pull (e.g. ghcr.io/scasplte2/ottochain-metagraph)'
+    required: true
+  image_tag:
+    description: 'Image tag to pull'
+    required: false
+    default: 'latest'
+  hosts:
+    description: 'Space-separated list of SSH host aliases to log in on'
+    required: false
+    default: 'node1 node2 node3'
+  ghcr_user:
+    description: 'GitHub username for GHCR login'
+    required: false
+    default: 'ottobot-ai'
+  pull:
+    description: 'Whether to also pull the image after logging in (true/false)'
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: GHCR login on all nodes
+      shell: bash
+      run: |
+        HOSTS="${{ inputs.hosts }}"
+        TOKEN="${{ inputs.github_token }}"
+        USER="${{ inputs.ghcr_user }}"
+
+        echo "Logging in to GHCR on: $HOSTS"
+        for host in $HOSTS; do
+          ssh "$host" "echo '$TOKEN' | docker login ghcr.io -u $USER --password-stdin" &
+        done
+        wait
+        echo "✅ GHCR login complete on all nodes"
+
+    - name: Pull image on all nodes
+      if: ${{ inputs.pull == 'true' }}
+      shell: bash
+      run: |
+        HOSTS="${{ inputs.hosts }}"
+        IMAGE="${{ inputs.image }}:${{ inputs.image_tag }}"
+
+        echo "Pulling $IMAGE on: $HOSTS"
+        for host in $HOSTS; do
+          ssh "$host" "docker pull $IMAGE" &
+        done
+        wait
+        echo "✅ Image pulled on all nodes"
