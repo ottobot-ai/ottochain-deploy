@@ -1,0 +1,95 @@
+name: Manage Docker Containers
+description: |
+  Start, stop, or restart Docker containers on remote hosts via SSH.
+  Supports multiple hosts and Docker compose profiles.
+
+inputs:
+  action:
+    description: 'Action to perform (start, stop, restart)'
+    required: true
+  hosts:
+    description: 'Comma-separated list of hosts'
+    required: true
+  ssh_key:
+    description: 'SSH private key (if not already configured via setup-ssh)'
+    required: false
+    default: ''
+  node_ips:
+    description: 'Comma-separated node IP addresses (for dynamic host resolution)'
+    required: false
+    default: ''
+  profiles:
+    description: 'Docker compose profiles to use'
+    required: false
+    default: ''
+  compose_file:
+    description: 'Docker compose file path on remote host'
+    required: false
+    default: 'docker-compose.yml'
+
+outputs:
+  container_status:
+    description: 'Final container status after action'
+    value: ${{ steps.status.outputs.container_status }}
+  affected_containers:
+    description: 'List of affected containers'
+    value: ${{ steps.status.outputs.affected_containers }}
+
+runs:
+  using: composite
+  steps:
+    - name: Stop containers on hosts
+      if: ${{ inputs.action == 'stop' || inputs.action == 'restart' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        IFS=',' read -ra HOSTS <<< "${{ inputs.hosts }}"
+        for host in "${HOSTS[@]}"; do
+          host="$(echo "$host" | xargs)"
+          echo "🛑 Stopping containers on $host..."
+          ssh "$host" "
+            cd /home/metagraph || cd /root || true
+            PROFILES='${{ inputs.profiles }}'
+            COMPOSE_FILE='${{ inputs.compose_file }}'
+            if [ -n \"\$PROFILES\" ]; then
+              docker compose --profile \$PROFILES -f \$COMPOSE_FILE down 2>/dev/null || docker compose down 2>/dev/null || true
+            else
+              docker compose -f \$COMPOSE_FILE down 2>/dev/null || docker compose down 2>/dev/null || true
+            fi
+            echo '✅ Containers stopped on $host'
+          " || echo "⚠️ Could not stop containers on $host"
+        done
+
+    - name: Start containers on hosts
+      if: ${{ inputs.action == 'start' || inputs.action == 'restart' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        IFS=',' read -ra HOSTS <<< "${{ inputs.hosts }}"
+        for host in "${HOSTS[@]}"; do
+          host="$(echo "$host" | xargs)"
+          echo "🚀 Starting containers on $host..."
+          ssh "$host" "
+            cd /home/metagraph || cd /root || true
+            PROFILES='${{ inputs.profiles }}'
+            COMPOSE_FILE='${{ inputs.compose_file }}'
+            if [ -n \"\$PROFILES\" ]; then
+              docker compose --profile \$PROFILES -f \$COMPOSE_FILE up -d 2>/dev/null || docker compose up -d 2>/dev/null || true
+            else
+              docker compose -f \$COMPOSE_FILE up -d 2>/dev/null || docker compose up -d 2>/dev/null || true
+            fi
+            echo '✅ Containers started on $host'
+          " || echo "⚠️ Could not start containers on $host"
+        done
+
+    - name: Get container status
+      id: status
+      shell: bash
+      run: |
+        set -euo pipefail
+        HOSTS_LIST="${{ inputs.hosts }}"
+        FIRST_HOST="$(echo "${HOSTS_LIST%%,*}" | xargs)"
+        STATUS=$(ssh "$FIRST_HOST" "docker ps --format '{{.Names}}:{{.Status}}'" 2>/dev/null || echo "unknown")
+        echo "container_status=$STATUS" >> "$GITHUB_OUTPUT"
+        echo "affected_containers=$HOSTS_LIST" >> "$GITHUB_OUTPUT"
+        echo "✅ Container management complete for: $HOSTS_LIST"

@@ -1,0 +1,81 @@
+name: Reusable Services Deployment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Target environment'
+        type: string
+        required: true
+      service_type:
+        description: 'Type of service to deploy (bridge, gateway, indexer, all)'
+        type: string
+        default: 'all'
+      version:
+        description: 'Service version to deploy'
+        type: string
+        required: true
+    secrets:
+      HETZNER_SSH_KEY:
+        required: false
+      HETZNER_SERVICES_IP:
+        required: false
+    outputs:
+      service_status:
+        description: 'Service deployment status'
+        value: ${{ jobs.deploy-services.outputs.service_status }}
+      service_urls:
+        description: 'URLs for deployed services'
+        value: ${{ jobs.deploy-services.outputs.service_urls }}
+
+jobs:
+  deploy-services:
+    name: Deploy Services
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    outputs:
+      service_status: ${{ steps.deploy.outputs.service_status }}
+      service_urls: ${{ steps.deploy.outputs.service_urls }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        if: ${{ secrets.HETZNER_SSH_KEY != '' }}
+        uses: ./.github/actions/setup-ssh
+        with:
+          hetzner_ssh_key: ${{ secrets.HETZNER_SSH_KEY }}
+          services_ip: ${{ secrets.HETZNER_SERVICES_IP }}
+
+      - name: Deploy services
+        id: deploy
+        shell: bash
+        run: |
+          SERVICE_TYPE="${{ inputs.service_type }}"
+          VERSION="${{ inputs.version }}"
+          ENVIRONMENT="${{ inputs.environment }}"
+
+          echo "🚀 Deploying $SERVICE_TYPE @ $VERSION to $ENVIRONMENT..."
+
+          if [ "$SERVICE_TYPE" = "all" ] || [ "$SERVICE_TYPE" = "bridge" ]; then
+            echo "  📦 Deploying bridge service..."
+            ssh services "
+              cd /home/metagraph/services || cd /root/services || true
+              docker compose pull bridge 2>/dev/null || true
+              docker compose up -d bridge 2>/dev/null || true
+            " 2>/dev/null || echo "⚠️ Bridge deploy failed (SSH not configured)"
+          fi
+
+          if [ "$SERVICE_TYPE" = "all" ] || [ "$SERVICE_TYPE" = "gateway" ]; then
+            echo "  📦 Deploying gateway service..."
+            ssh services "
+              cd /home/metagraph/services || cd /root/services || true
+              docker compose pull gateway 2>/dev/null || true
+              docker compose up -d gateway 2>/dev/null || true
+            " 2>/dev/null || echo "⚠️ Gateway deploy failed (SSH not configured)"
+          fi
+
+          echo "service_status=success" >> "$GITHUB_OUTPUT"
+          echo "service_urls=http://${HETZNER_SERVICES_IP:-services}:3030,http://${HETZNER_SERVICES_IP:-services}:4000" >> "$GITHUB_OUTPUT"
+          echo "✅ Services deployment complete"

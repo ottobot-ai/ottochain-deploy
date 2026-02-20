@@ -1,75 +1,75 @@
-name: Setup SSH
+name: Setup SSH for Hetzner Nodes
 description: |
-  Write the Hetzner SSH private key and configure ~/.ssh/config entries
-  for each requested host alias. Used by all deploy workflows to avoid
-  repeating the same ~20-line setup block.
+  Configure SSH access to Hetzner nodes. Sets up the SSH private key
+  and configures ~/.ssh/config entries for all cluster nodes and services.
 
 inputs:
-  ssh_key:
-    description: 'Hetzner SSH private key (PEM)'
+  hetzner_ssh_key:
+    description: 'SSH private key for Hetzner nodes'
     required: true
   node1_ip:
-    description: 'IP address for node1'
+    description: 'IP address of node1'
     required: false
     default: ''
   node2_ip:
-    description: 'IP address for node2'
+    description: 'IP address of node2'
     required: false
     default: ''
   node3_ip:
-    description: 'IP address for node3'
+    description: 'IP address of node3'
     required: false
     default: ''
   services_ip:
-    description: 'IP address for the services host'
+    description: 'IP address of services node'
     required: false
     default: ''
-  hosts:
-    description: |
-      Which host aliases to write into ~/.ssh/config.
-      Options: 'nodes' (node1-3), 'services', 'nodes-and-services' (all four).
-    required: false
-    default: 'nodes'
 
 runs:
   using: composite
   steps:
-    - name: Write SSH key
+    - name: Create SSH directory and write key
       shell: bash
       run: |
+        set -euo pipefail
         mkdir -p ~/.ssh
-        echo "${{ inputs.ssh_key }}" > ~/.ssh/hetzner
+        echo "${{ inputs.hetzner_ssh_key }}" > ~/.ssh/hetzner
         chmod 600 ~/.ssh/hetzner
 
     - name: Configure SSH hosts
       shell: bash
       run: |
-        HOSTS="${{ inputs.hosts }}"
+        set -euo pipefail
+        cat >> ~/.ssh/config << EOF
+        Host node1
+          HostName ${{ inputs.node1_ip }}
+          User root
+          IdentityFile ~/.ssh/hetzner
+          StrictHostKeyChecking no
 
-        write_host() {
-          local alias="$1"
-          local ip="$2"
-          if [ -z "$ip" ]; then
-            echo "::warning::setup-ssh: IP for '$alias' is empty — skipping host entry"
-            return
-          fi
-          cat >> ~/.ssh/config << EOF
-        Host $alias
-          HostName $ip
+        Host node2
+          HostName ${{ inputs.node2_ip }}
+          User root
+          IdentityFile ~/.ssh/hetzner
+          StrictHostKeyChecking no
+
+        Host node3
+          HostName ${{ inputs.node3_ip }}
+          User root
+          IdentityFile ~/.ssh/hetzner
+          StrictHostKeyChecking no
+
+        Host services
+          HostName ${{ inputs.services_ip }}
           User root
           IdentityFile ~/.ssh/hetzner
           StrictHostKeyChecking no
         EOF
-        }
+        echo "✅ SSH configured for all nodes and services"
 
-        if [ "$HOSTS" = "nodes" ] || [ "$HOSTS" = "nodes-and-services" ]; then
-          write_host node1 "${{ inputs.node1_ip }}"
-          write_host node2 "${{ inputs.node2_ip }}"
-          write_host node3 "${{ inputs.node3_ip }}"
-        fi
-
-        if [ "$HOSTS" = "services" ] || [ "$HOSTS" = "nodes-and-services" ]; then
-          write_host services "${{ inputs.services_ip }}"
-        fi
-
-        echo "✅ SSH configured for: $HOSTS"
+    - name: Set SSH permissions
+      shell: bash
+      run: |
+        set -euo pipefail
+        chmod 700 ~/.ssh
+        chmod 600 ~/.ssh/config 2>/dev/null || true
+        echo "✅ SSH permissions set correctly"

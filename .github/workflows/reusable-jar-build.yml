@@ -1,0 +1,83 @@
+name: Reusable JAR Build
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Target environment for build context'
+        type: string
+        default: 'development'
+      java_version:
+        description: 'Java version to use'
+        type: string
+        default: '21'
+      tessellation_version:
+        description: 'Tessellation version to build against'
+        type: string
+        required: true
+      skip_build:
+        description: 'Skip build if JARs already exist'
+        type: boolean
+        default: false
+      apply_tessellation_patch:
+        description: 'Apply tessellation compatibility patch'
+        type: boolean
+        default: true
+    outputs:
+      jars_artifact_name:
+        description: 'Name of uploaded JARs artifact'
+        value: ${{ jobs.build.outputs.jars_artifact_name }}
+      build_status:
+        description: 'Build completion status'
+        value: ${{ jobs.build.outputs.build_status }}
+
+jobs:
+  build:
+    name: Build JARs
+    runs-on: ubuntu-latest
+    if: "${{ inputs.skip_build != true }}"
+    outputs:
+      jars_artifact_name: ${{ steps.set-outputs.outputs.jars_artifact_name }}
+      build_status: ${{ steps.set-outputs.outputs.build_status }}
+
+    steps:
+      - name: Checkout deploy repo
+        uses: actions/checkout@v4
+
+      - name: Setup Java build environment
+        uses: ./.github/actions/setup-java-build
+        with:
+          java_version: ${{ inputs.java_version }}
+          tessellation_version: ${{ inputs.tessellation_version }}
+          apply_tessellation_patch: ${{ inputs.apply_tessellation_patch }}
+
+      - name: Build JARs with sbt
+        shell: bash
+        run: |
+          cd ottochain
+          source ~/.sdkman/bin/sdkman-init.sh 2>/dev/null || true
+          sbt assembly 2>&1 | tail -20
+          echo "✅ JAR build complete"
+
+      - name: Collect built JARs
+        shell: bash
+        run: |
+          mkdir -p jars
+          find ottochain -name "*.jar" -not -path "*/scala*" -not -name "*sources*" | while read jar; do
+            cp "$jar" jars/ 2>/dev/null || true
+          done
+          ls -la jars/
+
+      - name: Upload JARs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jars
+          path: jars/
+          retention-days: 7
+
+      - name: Set outputs
+        id: set-outputs
+        shell: bash
+        run: |
+          echo "jars_artifact_name=jars" >> "$GITHUB_OUTPUT"
+          echo "build_status=success" >> "$GITHUB_OUTPUT"
