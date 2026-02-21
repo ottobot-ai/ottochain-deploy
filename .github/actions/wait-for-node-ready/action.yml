@@ -36,6 +36,8 @@ runs:
         HOST="${{ inputs.ssh_host }}"
         NAME="${{ inputs.node_name }}"
 
+        CONTAINER_NAME=$(echo "$NAME" | tr '[:upper:]' '[:lower:]')
+        
         echo "Waiting for $NAME on $HOST:$PORT to become Ready (max ${MAX} attempts × 5s)..."
         for i in $(seq 1 "$MAX"); do
           state=$(ssh "$HOST" "curl -sf http://localhost:$PORT/node/info | jq -r .state" 2>/dev/null || echo "")
@@ -45,6 +47,18 @@ runs:
           fi
           if [ "$i" = "$MAX" ]; then
             echo "::error::$NAME on $HOST failed to reach Ready state after $((MAX * 5))s (last state: ${state:-unreachable})"
+            echo ""
+            echo "=== $NAME Docker Container Status ==="
+            ssh "$HOST" "docker ps -a --filter name=$CONTAINER_NAME --format 'Status: {{.Status}}'" || true
+            echo ""
+            echo "=== $NAME Container Logs (last 50 lines) ==="
+            ssh "$HOST" "docker logs $CONTAINER_NAME 2>&1 | tail -50" || true
+            echo ""
+            echo "=== $NAME Data Directory ==="
+            ssh "$HOST" "ls -la /opt/ottochain/${CONTAINER_NAME}-data/ 2>/dev/null | head -10" || true
+            echo ""
+            echo "=== $NAME Genesis Files ==="
+            ssh "$HOST" "ls -la /opt/ottochain/genesis/" || true
             exit 1
           fi
           echo "$NAME $HOST: ${state:-unreachable} (attempt $i/$MAX)"
