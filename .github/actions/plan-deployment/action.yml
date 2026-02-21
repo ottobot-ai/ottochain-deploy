@@ -1,0 +1,66 @@
+name: Plan Deployment Changes
+description: |
+  Analyze and plan deployment changes for the target environment.
+  Compares current versions with target and generates a deployment plan.
+
+inputs:
+  environment:
+    description: 'Target environment (development, staging, production, scratch)'
+    required: true
+  branch_name:
+    description: 'Git branch name'
+    required: false
+    default: '${{ github.ref_name }}'
+  versions_file:
+    description: 'Path to versions YAML file'
+    required: false
+    default: 'versions.yaml'
+
+outputs:
+  environment:
+    description: 'Resolved environment name'
+    value: ${{ steps.plan.outputs.environment }}
+  plan_file:
+    description: 'Path to deployment plan file'
+    value: ${{ steps.plan.outputs.plan_file }}
+  changes_detected:
+    description: 'Whether changes were detected'
+    value: ${{ steps.plan.outputs.changes_detected }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install yq for YAML parsing
+      shell: bash
+      run: |
+        set -euo pipefail
+        if ! command -v yq &>/dev/null; then
+          sudo snap install yq
+        fi
+        yq --version
+
+    - name: Generate deployment plan
+      id: plan
+      shell: bash
+      run: |
+        set -euo pipefail
+        export VERSIONS_FILE="${{ inputs.versions_file }}"
+        export PLAN_OUTPUT="deployment-plan.txt"
+        ./scripts/compare-versions.sh "${{ inputs.environment }}" "${{ inputs.branch_name }}" | tee deployment-plan.txt
+        echo "plan_file=deployment-plan.txt" >> "$GITHUB_OUTPUT"
+        echo "environment=${{ inputs.environment }}" >> "$GITHUB_OUTPUT"
+        echo "changes_detected=true" >> "$GITHUB_OUTPUT"
+
+    - name: Add plan to GitHub step summary
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "## 📋 Deployment Plan" >> $GITHUB_STEP_SUMMARY
+        echo "**Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Branch:** ${{ inputs.branch_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        if [ -f deployment-plan.txt ]; then
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat deployment-plan.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+        fi

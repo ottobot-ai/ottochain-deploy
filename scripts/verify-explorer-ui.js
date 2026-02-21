@@ -101,7 +101,8 @@ async function verifyExplorerUI() {
             // - Actual transaction rows (data exists)
             // - Empty state message (no data, but not loading)
             const txRows = await page.locator('table tbody tr, [class*="transaction-row"], [class*="tx-row"]').count();
-            const emptyState = await page.locator('text=/no.*transaction/i, text=/empty/i, text=/no data/i').count();
+            // Use .or() for multiple patterns - comma syntax doesn't work with regex
+            const emptyState = await page.locator('text=/no.*transaction/i').or(page.locator('text=/empty/i')).or(page.locator('text=/no data/i')).count();
             
             const hasContent = txRows > 0 || emptyState > 0;
             check('Transaction table has content or empty state', hasContent);
@@ -116,7 +117,8 @@ async function verifyExplorerUI() {
         // =================================================================
         // Test 4: Live indicator / Auto-update
         // =================================================================
-        const liveIndicator = await page.locator('text=/live/i, text=/auto.*update/i, [class*="live"]').count();
+        // Use .or() for multiple patterns - comma syntax doesn't work with regex
+        const liveIndicator = await page.locator('text=/live/i').or(page.locator('text=/auto.*update/i')).or(page.locator('[class*="live"]')).count();
         check('Live/Auto-update indicator present', liveIndicator > 0);
         
         // =================================================================

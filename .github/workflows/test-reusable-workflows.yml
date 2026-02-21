@@ -1,0 +1,239 @@
+# Test workflow for reusable workflows (TDD)
+# This will FAIL until the reusable workflows are implemented
+
+name: Test Reusable Workflows (TDD)
+
+on:
+  push:
+    branches: [test/refactor-workflows-tdd]
+  workflow_dispatch:
+    inputs:
+      test_build_only:
+        description: 'Test only build workflow'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  test-reusable-jar-build:
+    name: Test Reusable JAR Build Workflow
+    # This should FAIL until implemented
+    uses: ./.github/workflows/reusable-jar-build.yml
+    with:
+      java_version: '21'
+      tessellation_version: 'v4.0.0-rc.2'
+      skip_build: false
+      apply_tessellation_patch: true
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  verify-jar-build-outputs:
+    name: Verify JAR Build Outputs
+    runs-on: ubuntu-latest
+    needs: test-reusable-jar-build
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Download JAR artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: jars
+          path: jars/
+          
+      - name: Verify JAR artifacts
+        run: |
+          required_jars=("dag-l0.jar" "dag-l1.jar" "metagraph-l0.jar" "currency-l1.jar" "data-l1.jar")
+          
+          for jar in "${required_jars[@]}"; do
+            if [ ! -f "jars/$jar" ]; then
+              echo "❌ Required JAR not found: $jar"
+              exit 1
+            fi
+            
+            if [ ! -s "jars/$jar" ]; then
+              echo "❌ JAR file is empty: $jar"
+              exit 1
+            fi
+            
+            echo "✅ JAR verified: $jar ($(du -h jars/$jar | cut -f1))"
+          done
+          
+          echo "✅ All required JARs built successfully"
+
+  test-reusable-cluster-deployment:
+    name: Test Reusable Cluster Deployment Workflow
+    needs: test-reusable-jar-build
+    if: always() && (needs.test-reusable-jar-build.result == 'success' || inputs.test_build_only != true)
+    # This should FAIL until implemented
+    uses: ./.github/workflows/reusable-cluster-deployment.yml
+    with:
+      environment: 'development'
+      wipe_state: true
+      skip_build: false
+      deployment_strategy: 'orchestrated'
+    secrets:
+      HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+      HETZNER_NODE1_IP: ${{ secrets.HETZNER_NODE1_IP }}
+      HETZNER_NODE2_IP: ${{ secrets.HETZNER_NODE2_IP }}
+      HETZNER_NODE3_IP: ${{ secrets.HETZNER_NODE3_IP }}
+      HETZNER_SERVICES_IP: ${{ secrets.HETZNER_SERVICES_IP }}
+      CL_KEYSTORE_PASSWORD: ${{ secrets.CL_KEYSTORE_PASSWORD }}
+
+  verify-cluster-deployment:
+    name: Verify Cluster Deployment
+    runs-on: ubuntu-latest
+    needs: test-reusable-cluster-deployment
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Verify deployment outputs
+        run: |
+          if [ -z "${{ needs.test-reusable-cluster-deployment.outputs.gl0_peer_id }}" ]; then
+            echo "❌ GL0 peer ID not output from deployment"
+            exit 1
+          fi
+          
+          if [ -z "${{ needs.test-reusable-cluster-deployment.outputs.ml0_peer_id }}" ]; then
+            echo "❌ ML0 peer ID not output from deployment"
+            exit 1
+          fi
+          
+          if [ -z "${{ needs.test-reusable-cluster-deployment.outputs.token_id }}" ]; then
+            echo "❌ Token ID not output from deployment"
+            exit 1
+          fi
+          
+          if [ -z "${{ needs.test-reusable-cluster-deployment.outputs.deployment_status }}" ]; then
+            echo "❌ Deployment status not output"
+            exit 1
+          fi
+          
+          if [ "${{ needs.test-reusable-cluster-deployment.outputs.deployment_status }}" != "success" ]; then
+            echo "❌ Deployment did not succeed"
+            exit 1
+          fi
+          
+          echo "✅ Cluster deployment workflow completed successfully"
+          echo "  - GL0 Peer ID: ${{ needs.test-reusable-cluster-deployment.outputs.gl0_peer_id }}"
+          echo "  - ML0 Peer ID: ${{ needs.test-reusable-cluster-deployment.outputs.ml0_peer_id }}" 
+          echo "  - Token ID: ${{ needs.test-reusable-cluster-deployment.outputs.token_id }}"
+
+  test-reusable-services-deployment:
+    name: Test Reusable Services Deployment Workflow
+    # This should FAIL until implemented
+    uses: ./.github/workflows/reusable-services-deployment.yml
+    with:
+      environment: 'development'
+      service_type: 'bridge'
+      version: 'latest'
+      restart_services: true
+    secrets:
+      HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+      HETZNER_SERVICES_IP: ${{ secrets.HETZNER_SERVICES_IP }}
+
+  verify-services-deployment:
+    name: Verify Services Deployment
+    runs-on: ubuntu-latest
+    needs: test-reusable-services-deployment
+    
+    steps:
+      - name: Verify services deployment outputs
+        run: |
+          if [ -z "${{ needs.test-reusable-services-deployment.outputs.service_status }}" ]; then
+            echo "❌ Service status not output from deployment"
+            exit 1
+          fi
+          
+          if [ "${{ needs.test-reusable-services-deployment.outputs.service_status }}" != "running" ]; then
+            echo "❌ Services not running after deployment"
+            exit 1
+          fi
+          
+          if [ -z "${{ needs.test-reusable-services-deployment.outputs.service_urls }}" ]; then
+            echo "❌ Service URLs not output"
+            exit 1
+          fi
+          
+          echo "✅ Services deployment workflow completed successfully"
+          echo "  - Status: ${{ needs.test-reusable-services-deployment.outputs.service_status }}"
+          echo "  - URLs: ${{ needs.test-reusable-services-deployment.outputs.service_urls }}"
+
+  test-reusable-post-deployment-tests:
+    name: Test Reusable Post-Deployment Tests Workflow
+    needs: [test-reusable-cluster-deployment, test-reusable-services-deployment]
+    if: always() && needs.test-reusable-cluster-deployment.result == 'success'
+    # This should FAIL until implemented
+    uses: ./.github/workflows/reusable-post-deployment-tests.yml
+    with:
+      environment: 'development'
+      test_suite: 'smoke'
+      bridge_url: 'http://5.78.121.248:3030'
+      ml0_url: 'http://5.78.90.207:9200'
+      timeout_minutes: 10
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  verify-post-deployment-tests:
+    name: Verify Post-Deployment Tests
+    runs-on: ubuntu-latest
+    needs: test-reusable-post-deployment-tests
+    
+    steps:
+      - name: Verify test results
+        run: |
+          if [ -z "${{ needs.test-reusable-post-deployment-tests.outputs.test_results }}" ]; then
+            echo "❌ Test results not output"
+            exit 1
+          fi
+          
+          if [ -z "${{ needs.test-reusable-post-deployment-tests.outputs.tests_passed }}" ]; then
+            echo "❌ Test pass count not output"
+            exit 1
+          fi
+          
+          if [ "${{ needs.test-reusable-post-deployment-tests.outputs.tests_passed }}" == "0" ]; then
+            echo "❌ No tests passed in post-deployment verification"
+            exit 1
+          fi
+          
+          echo "✅ Post-deployment tests workflow completed successfully"
+          echo "  - Tests Passed: ${{ needs.test-reusable-post-deployment-tests.outputs.tests_passed }}"
+          echo "  - Results: ${{ needs.test-reusable-post-deployment-tests.outputs.test_results }}"
+
+  integration-test-summary:
+    name: Integration Test Summary
+    runs-on: ubuntu-latest
+    needs: [verify-jar-build-outputs, verify-cluster-deployment, verify-services-deployment, verify-post-deployment-tests]
+    if: always()
+    
+    steps:
+      - name: Generate Integration Test Summary
+        run: |
+          echo "# 🧪 Workflow Refactoring Integration Tests" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          jar_result="${{ needs.verify-jar-build-outputs.result }}"
+          cluster_result="${{ needs.verify-cluster-deployment.result }}"
+          services_result="${{ needs.verify-services-deployment.result }}"
+          tests_result="${{ needs.verify-post-deployment-tests.result }}"
+          
+          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **JAR Build**: $jar_result" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cluster Deployment**: $cluster_result" >> $GITHUB_STEP_SUMMARY  
+          echo "- **Services Deployment**: $services_result" >> $GITHUB_STEP_SUMMARY
+          echo "- **Post-Deployment Tests**: $tests_result" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "$jar_result" = "success" ] && [ "$cluster_result" = "success" ] && [ "$services_result" = "success" ] && [ "$tests_result" = "success" ]; then
+            echo "✅ **All reusable workflow tests passed!**" >> $GITHUB_STEP_SUMMARY
+            echo "The refactored workflows are ready for implementation." >> $GITHUB_STEP_SUMMARY
+            exit 0
+          else
+            echo "❌ **Some reusable workflow tests failed.**" >> $GITHUB_STEP_SUMMARY
+            echo "Review the failed components and fix before implementing." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi

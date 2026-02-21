@@ -25,18 +25,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/hetzner
-          chmod 600 ~/.ssh/hetzner
-          cat >> ~/.ssh/config << EOF
-          Host services
-            HostName ${{ secrets.HETZNER_SERVICES_IP }}
-            User root
-            IdentityFile ~/.ssh/hetzner
-            StrictHostKeyChecking no
-          EOF
+        uses: ./.github/actions/setup-ssh
+        with:
+          hetzner_ssh_key: ${{ secrets.HETZNER_SSH_KEY }}
+          services_ip: ${{ secrets.HETZNER_SERVICES_IP }}
 
       - name: Parse layers
         id: parse

@@ -52,42 +52,23 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout (needed for composite actions)
+        uses: actions/checkout@v4
+
       - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/hetzner
-          chmod 600 ~/.ssh/hetzner
-          cat >> ~/.ssh/config << EOF
-          Host services
-            HostName ${{ secrets.HETZNER_SERVICES_IP }}
-            User root
-            IdentityFile ~/.ssh/hetzner
-            StrictHostKeyChecking no
-          EOF
+        uses: ./.github/actions/setup-ssh
+        with:
+          ssh_key: ${{ secrets.HETZNER_SSH_KEY }}
+          node1_ip: ${{ secrets.HETZNER_NODE1_IP }}
+          services_ip: ${{ secrets.HETZNER_SERVICES_IP }}
+          hosts: nodes-and-services
 
       - name: Prepare remote directory
         run: |
           ssh services "mkdir -p /opt/ottochain-services"
 
-      - name: Reset database and Redis
-        if: ${{ inputs.reset_db == true }}
-        run: |
-          echo "Flushing Postgres and Redis..."
-          ssh services << 'RESET_SCRIPT'
-          docker exec redis redis-cli FLUSHALL 2>/dev/null && echo "✓ Redis flushed" || echo "ℹ Redis not running"
-          
-          docker exec postgres psql -U ottochain -d ottochain -c "
-            DO \$\$
-            DECLARE
-              r RECORD;
-            BEGIN
-              FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
-                EXECUTE 'TRUNCATE TABLE \"' || r.tablename || '\" CASCADE';
-              END LOOP;
-            END \$\$;
-          " 2>/dev/null && echo "✓ Postgres tables truncated" || echo "ℹ Postgres not running"
-          RESET_SCRIPT
-
+      # Note: Database reset moved to after containers are started
+      
       - name: Write docker-compose.yml
         run: |
           ssh services "cat > /opt/ottochain-services/docker-compose.yml" << 'COMPOSE_EOF'
@@ -107,6 +88,8 @@ jobs:
                 - DATABASE_URL=${DATABASE_URL}
                 - METAGRAPH_ML0_URL=${METAGRAPH_ML0_URL}
                 - METAGRAPH_DL1_URL=${METAGRAPH_DL1_URL}
+                - GL0_URL=${GL0_URL}
+                - METAGRAPH_ID=${METAGRAPH_ID}
                 - REDIS_URL=${REDIS_URL:-redis://redis:6379}
               depends_on:
                 - redis
@@ -130,6 +113,8 @@ jobs:
                 - DATABASE_URL=${DATABASE_URL}
                 - METAGRAPH_ML0_URL=${METAGRAPH_ML0_URL}
                 - METAGRAPH_DL1_URL=${METAGRAPH_DL1_URL}
+                - GL0_URL=${GL0_URL}
+                - METAGRAPH_ID=${METAGRAPH_ID}
                 - REDIS_URL=${REDIS_URL:-redis://redis:6379}
               depends_on:
                 - redis
@@ -153,10 +138,14 @@ jobs:
                 - DATABASE_URL=${DATABASE_URL}
                 - METAGRAPH_ML0_URL=${METAGRAPH_ML0_URL}
                 - METAGRAPH_DL1_URL=${METAGRAPH_DL1_URL}
+                - GL0_URL=${GL0_URL}
+                - METAGRAPH_ID=${METAGRAPH_ID}
+                - REDIS_URL=${REDIS_URL:-redis://redis:6379}
                 - INDEXER_PORT=3031
                 - INDEXER_CALLBACK_URL=${INDEXER_CALLBACK_URL:-http://indexer:3031/webhook/snapshot}
               depends_on:
                 - postgres
+                - redis
               networks:
                 - ottochain
               healthcheck:
@@ -177,6 +166,8 @@ jobs:
                 - DATABASE_URL=${DATABASE_URL}
                 - METAGRAPH_ML0_URL=${METAGRAPH_ML0_URL}
                 - METAGRAPH_DL1_URL=${METAGRAPH_DL1_URL}
+                - GL0_URL=${GL0_URL}
+                - METAGRAPH_ID=${METAGRAPH_ID}
                 - REDIS_URL=${REDIS_URL:-redis://redis:6379}
               depends_on:
                 - redis
@@ -196,7 +187,9 @@ jobs:
                 - SERVICE=traffic-generator
                 - NODE_ENV=production
                 - BRIDGE_URL=http://bridge:3030
+                - METAGRAPH_ML0_URL=${METAGRAPH_ML0_URL}
                 - ML0_URL=${METAGRAPH_ML0_URL}
+                - GL0_URL=${GL0_URL}
                 - INDEXER_URL=http://indexer:3031
                 - TRAFFIC_INTERVAL=${TRAFFIC_INTERVAL:-5000}
                 - TRAFFIC_BATCH_SIZE=${TRAFFIC_BATCH_SIZE:-3}
@@ -270,6 +263,14 @@ jobs:
           METAGRAPH_IP="${{ secrets.HETZNER_NODE1_IP }}"
           SERVICES_VERSION="${{ inputs.services_version || 'latest' }}"
           EXPLORER_VERSION="${{ inputs.explorer_version || 'latest' }}"
+          
+          # Fetch metagraph ID from node1 (generated at metagraph build time)
+          METAGRAPH_ID=$(ssh node1 "cat /opt/ottochain/genesis/genesis.address 2>/dev/null" || echo "")
+          if [ -z "$METAGRAPH_ID" ]; then
+            echo "⚠️ Could not fetch METAGRAPH_ID from node1, GL0 confirmations will be disabled"
+          else
+            echo "✓ Fetched METAGRAPH_ID: $METAGRAPH_ID"
+          fi
 
           ssh services "cat > /opt/ottochain-services/.env" << ENVFILE
           # OttoChain Services Environment
@@ -284,6 +285,12 @@ jobs:
           POSTGRES_USER=ottochain
           POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
           POSTGRES_DB=ottochain
+
+          # Redis (must be explicit - compose defaults don't always apply)
+          REDIS_URL=redis://redis:6379
+
+          # Metagraph identification (fetched from node1 genesis, used for GL0 confirmation checking)
+          METAGRAPH_ID=${METAGRAPH_ID}
 
           # Metagraph endpoints
           METAGRAPH_ML0_URL=http://${METAGRAPH_IP}:9200
@@ -308,17 +315,57 @@ jobs:
           pm2 stop all 2>/dev/null || true
           pm2 delete all 2>/dev/null || true
           
+          # Clean up any orphan containers from previous runs/projects
+          # This handles containers that compose down won't remove
+          docker rm -f gateway bridge indexer explorer postgres redis 2>/dev/null || true
+          
           # Pull images and deploy
+          # IMPORTANT: --force-recreate ensures containers pick up new .env values
           docker compose pull
-          docker compose up -d
+          docker compose down --remove-orphans 2>/dev/null || true
+          docker compose up -d --force-recreate
+          
+          # Wait for postgres/redis to be ready
+          sleep 10
+          DEPLOY_SCRIPT
+
+      - name: Reset database and Redis
+        if: ${{ inputs.reset_db == true }}
+        run: |
+          echo "Resetting database and Redis (wipe_state requested)..."
+          ssh services << 'RESET_SCRIPT'
+          # Flush Redis
+          docker exec redis redis-cli FLUSHALL && echo "✓ Redis flushed"
+          
+          # Truncate all Postgres tables
+          docker exec postgres psql -U ottochain -d ottochain -c "
+            DO \$\$
+            DECLARE
+              r RECORD;
+            BEGIN
+              FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                EXECUTE 'TRUNCATE TABLE \"' || r.tablename || '\" CASCADE';
+              END LOOP;
+            END \$\$;
+          " && echo "✓ Postgres tables truncated"
+          RESET_SCRIPT
+          
+      - name: Run migrations and restart services
+        run: |
+          ssh services << 'MIGRATE_SCRIPT'
+          cd /opt/ottochain-services
           
           # Run database migrations
-          sleep 10
           docker compose exec -T indexer npx prisma db push --accept-data-loss || true
+          
+          # Restart services to pick up clean state
+          docker compose restart gateway bridge indexer monitor || true
           
           # Show status
           docker compose ps
-          DEPLOY_SCRIPT
+          
+          echo "✓ Services deployed and ready"
+          MIGRATE_SCRIPT
 
       - name: Update nginx config
         run: |

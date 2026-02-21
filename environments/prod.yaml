@@ -1,0 +1,47 @@
+# Production Environment - Live System
+# Source: pinned stable versions only
+# Auto-deploy: NEVER - manual promotion with approval
+
+name: prod
+mode: version
+auto_deploy: false
+
+sources:
+  tessellation:
+    type: upstream
+    version: v4.0.0  # Stable release only
+    
+  metakit:
+    type: upstream
+    version: null  # TODO: pin when stable
+    
+  ottochain:
+    type: core
+    version: null  # TODO: first prod release
+    
+  sdk:
+    type: ecosystem
+    version: null
+    
+  services:
+    type: ecosystem
+    version: null
+    
+  explorer:
+    type: ecosystem
+    version: null
+    
+  monitoring:
+    type: ecosystem
+    version: null
+
+infrastructure:
+  cluster: null  # TBD - production infrastructure
+  nodes: []
+  services_host: null
+
+# Promotion requires:
+# - Staging validated for minimum 48 hours
+# - All E2E tests pass
+# - Manual approval from James
+# - Backup of current state

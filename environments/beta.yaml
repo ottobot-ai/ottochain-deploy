@@ -1,0 +1,48 @@
+# Beta Environment - Integration Testing
+# Source: develop branches (semi-stable)
+# Auto-deploy: on push to develop branches
+
+name: beta
+mode: branch
+auto_deploy: true
+
+sources:
+  tessellation:
+    type: upstream
+    repo: Constellation-Labs/tessellation
+    ref: main
+    
+  metakit:
+    type: upstream
+    repo: Constellation-Labs/metakit
+    ref: main
+    
+  ottochain:
+    type: core
+    repo: scasplte2/ottochain
+    ref: develop
+    
+  sdk:
+    type: ecosystem
+    repo: ottobot-ai/ottochain-sdk
+    ref: develop
+    
+  services:
+    type: ecosystem
+    repo: ottobot-ai/ottochain-services
+    ref: develop
+    
+  explorer:
+    type: ecosystem
+    repo: ottobot-ai/ottochain-explorer
+    ref: develop
+    
+  monitoring:
+    type: ecosystem
+    repo: ottobot-ai/ottochain-monitoring
+    ref: develop
+
+infrastructure:
+  cluster: null  # TBD - separate from scratch
+  nodes: []
+  services_host: null

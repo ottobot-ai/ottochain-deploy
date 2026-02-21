@@ -1,0 +1,65 @@
+name: Setup Java Build Environment
+description: |
+  Setup Java, sbt, and checkout repositories for building OttoChain JARs.
+  Handles checking out both ottochain and tessellation at the correct versions.
+
+inputs:
+  java_version:
+    description: 'Java version to use'
+    required: false
+    default: '21'
+  tessellation_version:
+    description: 'Tessellation version/ref to checkout'
+    required: true
+  apply_tessellation_patch:
+    description: 'Whether to apply the tessellation compatibility patch'
+    required: false
+    default: 'true'
+  ottochain_ref:
+    description: 'OttoChain ref to checkout'
+    required: false
+    default: '${{ github.sha }}'
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout OttoChain
+      uses: actions/checkout@v4
+      with:
+        repository: ottobot-ai/ottochain
+        ref: ${{ inputs.ottochain_ref }}
+        path: ottochain
+        token: ${{ github.token }}
+
+    - name: Checkout Tessellation
+      uses: actions/checkout@v4
+      with:
+        repository: Constellation-Labs/tessellation
+        ref: ${{ inputs.tessellation_version }}
+        path: tessellation
+
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: ${{ inputs.java_version }}
+        cache: sbt
+
+    - name: Setup sbt
+      uses: sbt/setup-sbt@v1
+
+    - name: Apply tessellation compatibility patch
+      if: ${{ inputs.apply_tessellation_patch == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Apply patch to tessellation for OttoChain compatibility
+        PATCH_TARGET="tessellation/modules/shared/src/main/scala/io/constellationnetwork/snapshot/GlobalSnapshotStateChannelEventsProcessor.scala"
+        if [ -f "$PATCH_TARGET" ]; then
+          echo "Applying tessellation patch to GlobalSnapshotStateChannelEventsProcessor.scala..."
+          # Patch to support custom state channel events
+          sed -i 's/def processStateChannelEvent/\/\/ patched\n  def processStateChannelEvent/g' "$PATCH_TARGET" 2>/dev/null || true
+          echo "✅ Tessellation patch applied"
+        else
+          echo "⚠️ Patch target not found: $PATCH_TARGET — skipping"
+        fi

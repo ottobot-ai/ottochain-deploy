@@ -1,0 +1,22 @@
+{
+  "name": "ottochain-deploy-tests",
+  "version": "1.0.0",
+  "description": "TDD tests for deploy workflow refactoring",
+  "scripts": {
+    "test": "jest",
+    "test:tdd": "node tests/composite-actions.test.js",
+    "test:watch": "jest --watch",
+    "lint:workflows": "actionlint .github/workflows/*.yml"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "js-yaml": "^4.1.0",
+    "@types/jest": "^29.5.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ]
+  }
+}

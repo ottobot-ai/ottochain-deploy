@@ -1,0 +1,126 @@
+name: Join Cluster
+description: |
+  Join validator nodes to a tessellation cluster. Waits for nodes to reach
+  ReadyToJoin state, then sends join requests to the cluster.
+
+inputs:
+  hosts:
+    description: 'Space-separated SSH host aliases for validators (e.g. "node2 node3")'
+    required: true
+  cli_port:
+    description: 'CLI HTTP port for join requests (e.g. 9002 for GL0)'
+    required: true
+  p2p_port:
+    description: 'P2P port of the genesis node (e.g. 9001 for GL0)'
+    required: true
+  public_port:
+    description: 'Public HTTP port for state checks (e.g. 9000 for GL0)'
+    required: true
+  peer_id:
+    description: 'Peer ID of the genesis node to join'
+    required: true
+  peer_ip:
+    description: 'IP address of the genesis node'
+    required: true
+  layer_name:
+    description: 'Display name used in log messages (e.g. GL0, ML0)'
+    required: true
+  container_name:
+    description: 'Docker container name (defaults to lowercase layer_name)'
+    required: false
+    default: ''
+  max_readiness_attempts:
+    description: 'Max 5-second attempts waiting for ReadyToJoin'
+    required: false
+    default: '30'
+
+runs:
+  using: composite
+  steps:
+    - name: Wait for validators to be ready
+      shell: bash
+      run: |
+        HOSTS="${{ inputs.hosts }}"
+        PORT="${{ inputs.public_port }}"
+        NAME="${{ inputs.layer_name }}"
+        MAX="${{ inputs.max_readiness_attempts }}"
+
+        echo "Waiting for $NAME validators to reach ReadyToJoin state..."
+        for host in $HOSTS; do
+          for i in $(seq 1 "$MAX"); do
+            STATE=$(ssh "$host" "curl -sf http://localhost:$PORT/node/state 2>/dev/null | tr -d '\"'" || echo "unknown")
+            echo "$host $NAME state: $STATE (attempt $i/$MAX)"
+            if [ "$STATE" = "ReadyToJoin" ] || [ "$STATE" = "Observing" ] || [ "$STATE" = "Ready" ]; then
+              echo "✓ $host $NAME ready"
+              break
+            fi
+            if [ "$i" = "$MAX" ]; then
+              echo "::warning::$host $NAME did not reach ReadyToJoin state (current: $STATE)"
+            fi
+            sleep 5
+          done
+        done
+
+    - name: Join validators to cluster
+      shell: bash
+      run: |
+        HOSTS="${{ inputs.hosts }}"
+        CLI_PORT="${{ inputs.cli_port }}"
+        P2P_PORT="${{ inputs.p2p_port }}"
+        PEER_ID="${{ inputs.peer_id }}"
+        PEER_IP="${{ inputs.peer_ip }}"
+        NAME="${{ inputs.layer_name }}"
+        CONTAINER="${{ inputs.container_name }}"
+        MAX_JOIN_ATTEMPTS=5
+        JOIN_RETRY_DELAY=5
+        
+        # Default container name to lowercase layer name
+        if [ -z "$CONTAINER" ]; then
+          CONTAINER=$(echo "$NAME" | tr '[:upper:]' '[:lower:]')
+        fi
+
+        echo "Joining $NAME validators to cluster..."
+        echo "Peer ID: ${PEER_ID:0:32}..."
+        echo "Peer IP: $PEER_IP"
+        
+        JOIN_PAYLOAD=$(printf '{"id": "%s", "ip": "%s", "p2pPort": %s}' "$PEER_ID" "$PEER_IP" "$P2P_PORT")
+        echo "JOIN_PAYLOAD: $JOIN_PAYLOAD"
+        
+        for host in $HOSTS; do
+          echo "Joining $host $NAME with retry logic..."
+          JOIN_SUCCESS=false
+          
+          for attempt in $(seq 1 $MAX_JOIN_ATTEMPTS); do
+            RESPONSE=$(ssh "$host" "docker exec $CONTAINER curl -sf -X POST http://127.0.0.1:$CLI_PORT/cluster/join -H 'Content-Type: application/json' -d '$JOIN_PAYLOAD' 2>&1" || true)
+            
+            # Check for success (empty response, or explicit success message)
+            if [ -z "$RESPONSE" ] || echo "$RESPONSE" | grep -qi "success\|ok"; then
+              echo "✓ $host $NAME join initiated (attempt $attempt)"
+              JOIN_SUCCESS=true
+              break
+            fi
+            
+            # Check if already joined
+            if echo "$RESPONSE" | grep -qi "already"; then
+              echo "✓ $host $NAME already in cluster"
+              JOIN_SUCCESS=true
+              break
+            fi
+            
+            # Check for SessionStarted (node not ready to join yet)
+            if echo "$RESPONSE" | grep -qi "SessionStarted"; then
+              echo "⏳ $host $NAME still in SessionStarted, waiting... (attempt $attempt/$MAX_JOIN_ATTEMPTS)"
+            else
+              echo "⚠ $host $NAME join attempt $attempt failed: $RESPONSE"
+            fi
+            
+            if [ "$attempt" -lt "$MAX_JOIN_ATTEMPTS" ]; then
+              sleep $JOIN_RETRY_DELAY
+            fi
+          done
+          
+          if [ "$JOIN_SUCCESS" = "false" ]; then
+            echo "::error::$host $NAME failed to join cluster after $MAX_JOIN_ATTEMPTS attempts"
+            exit 1
+          fi
+        done

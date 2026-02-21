@@ -1,0 +1,80 @@
+name: Release — Scratch Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      tessellation_version:
+        description: 'Tessellation version to build against'
+        required: true
+        default: 'v2.8.0'
+      java_version:
+        description: 'Java version'
+        required: false
+        default: '21'
+      skip_build:
+        description: 'Skip JAR build (use existing artifact)'
+        type: boolean
+        default: false
+      wipe_state:
+        description: 'Wipe metagraph state before deployment'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  preflight:
+    name: Preflight — Plan & Validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        uses: ./.github/actions/setup-ssh
+        with:
+          hetzner_ssh_key: ${{ secrets.HETZNER_SSH_KEY }}
+          node1_ip: ${{ secrets.HETZNER_NODE1_IP }}
+          node2_ip: ${{ secrets.HETZNER_NODE2_IP }}
+          node3_ip: ${{ secrets.HETZNER_NODE3_IP }}
+          services_ip: ${{ secrets.HETZNER_SERVICES_IP }}
+
+      - name: Plan deployment
+        uses: ./.github/actions/plan-deployment
+        with:
+          environment: scratch
+          branch_name: ${{ github.ref_name }}
+
+  build:
+    name: Build JARs
+    needs: preflight
+    uses: ./.github/workflows/reusable-jar-build.yml
+    with:
+      java_version: ${{ inputs.java_version }}
+      tessellation_version: ${{ inputs.tessellation_version }}
+      skip_build: ${{ inputs.skip_build }}
+    secrets: inherit
+
+  deploy:
+    name: Deploy to Scratch
+    needs: build
+    uses: ./.github/workflows/reusable-cluster-deployment.yml
+    with:
+      environment: scratch
+      wipe_state: ${{ inputs.wipe_state }}
+      deployment_strategy: full-restart
+      jars_artifact_name: ${{ needs.build.outputs.jars_artifact_name || 'jars' }}
+    secrets: inherit
+
+  test:
+    name: Post-Deploy Tests
+    needs: [deploy]
+    uses: ./.github/workflows/reusable-post-deployment-tests.yml
+    with:
+      environment: scratch
+      test_suite: smoke
+      bridge_url: http://localhost:3030
+      ml0_url: http://localhost:9200
+    secrets: inherit

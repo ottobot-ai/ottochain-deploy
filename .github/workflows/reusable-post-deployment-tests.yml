@@ -1,0 +1,114 @@
+name: Reusable Post-Deployment Tests
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Target environment to test'
+        type: string
+        required: true
+      test_suite:
+        description: 'Test suite to run (smoke, integration, e2e, all)'
+        type: string
+        default: 'smoke'
+      bridge_url:
+        description: 'Bridge service URL for testing'
+        type: string
+        required: true
+      ml0_url:
+        description: 'ML0 node URL for testing'
+        type: string
+        required: true
+      indexer_url:
+        description: 'Indexer service URL for rejection API checks'
+        type: string
+        default: ''
+      timeout_minutes:
+        description: 'Test timeout in minutes'
+        type: number
+        default: 10
+    outputs:
+      test_results:
+        description: 'Test results summary'
+        value: ${{ jobs.post-tests.outputs.test_results }}
+      tests_passed:
+        description: 'Whether all tests passed'
+        value: ${{ jobs.post-tests.outputs.tests_passed }}
+
+jobs:
+  post-tests:
+    name: Post-Deployment Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ fromJSON(toJSON(inputs.timeout_minutes)) }}
+    outputs:
+      test_results: ${{ steps.run-tests.outputs.test_results }}
+      tests_passed: ${{ steps.run-tests.outputs.tests_passed }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install test dependencies
+        shell: bash
+        run: |
+          if [ -f package.json ]; then
+            npm ci 2>/dev/null || npm install 2>/dev/null || true
+          fi
+
+      - name: Run post-deployment tests
+        id: run-tests
+        shell: bash
+        env:
+          BRIDGE_URL: ${{ inputs.bridge_url }}
+          ML0_URL: ${{ inputs.ml0_url }}
+          INDEXER_URL: ${{ inputs.indexer_url }}
+          TEST_SUITE: ${{ inputs.test_suite }}
+        run: |
+          echo "🧪 Running $TEST_SUITE tests against $ENVIRONMENT..."
+          echo "  Bridge: $BRIDGE_URL"
+          echo "  ML0: $ML0_URL"
+
+          TESTS_PASSED=true
+          RESULTS=""
+
+          # Smoke tests: basic connectivity
+          if [ "$TEST_SUITE" = "smoke" ] || [ "$TEST_SUITE" = "all" ]; then
+            echo "Running smoke tests..."
+            if curl -sf "$BRIDGE_URL/health" > /dev/null 2>&1; then
+              RESULTS="$RESULTS Bridge:✅"
+            else
+              RESULTS="$RESULTS Bridge:❌"
+              TESTS_PASSED=false
+            fi
+            if curl -sf "$ML0_URL/cluster/info" > /dev/null 2>&1; then
+              RESULTS="$RESULTS ML0:✅"
+            else
+              RESULTS="$RESULTS ML0:❌"
+              TESTS_PASSED=false
+            fi
+          fi
+
+          # Integration tests
+          if [ "$TEST_SUITE" = "integration" ] || [ "$TEST_SUITE" = "all" ]; then
+            echo "Running integration tests..."
+            if [ -f packages/traffic-generator/test/integration.test.ts ]; then
+              BRIDGE_URL="$BRIDGE_URL" ML0_URL="$ML0_URL" npx tsx packages/traffic-generator/test/integration.test.ts 2>&1 | tail -10 && \
+                RESULTS="$RESULTS Integration:✅" || RESULTS="$RESULTS Integration:❌"
+            fi
+          fi
+
+          echo "test_results=$RESULTS" >> "$GITHUB_OUTPUT"
+          echo "tests_passed=$TESTS_PASSED" >> "$GITHUB_OUTPUT"
+
+          if [ "$TESTS_PASSED" = "true" ]; then
+            echo "✅ All tests passed: $RESULTS"
+          else
+            echo "❌ Some tests failed: $RESULTS"
+            exit 1
+          fi

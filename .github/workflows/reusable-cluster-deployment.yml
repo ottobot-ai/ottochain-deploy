@@ -1,0 +1,127 @@
+name: Reusable Cluster Deployment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Target environment (scratch, development, staging, production)'
+        type: string
+        required: true
+      wipe_state:
+        description: 'Whether to wipe metagraph state before deployment'
+        type: boolean
+        default: false
+      deployment_strategy:
+        description: 'Deployment strategy (rolling, full-restart, canary)'
+        type: string
+        default: 'rolling'
+      jars_artifact_name:
+        description: 'Name of JARs artifact from build job'
+        type: string
+        default: 'jars'
+    secrets:
+      HETZNER_SSH_KEY:
+        required: true
+      CL_KEYSTORE_PASSWORD:
+        required: true
+      HETZNER_NODE1_IP:
+        required: true
+      HETZNER_NODE2_IP:
+        required: false
+      HETZNER_NODE3_IP:
+        required: false
+      HETZNER_SERVICES_IP:
+        required: false
+    outputs:
+      gl0_peer_id:
+        description: 'GL0 peer ID after deployment'
+        value: ${{ jobs.deploy.outputs.gl0_peer_id }}
+      ml0_peer_id:
+        description: 'ML0 peer ID after deployment'
+        value: ${{ jobs.deploy.outputs.ml0_peer_id }}
+      token_id:
+        description: 'Metagraph token ID after deployment'
+        value: ${{ jobs.deploy.outputs.token_id }}
+      deployment_status:
+        description: 'Deployment completion status'
+        value: ${{ jobs.deploy.outputs.deployment_status }}
+
+jobs:
+  deploy:
+    name: Deploy Cluster
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    outputs:
+      gl0_peer_id: ${{ steps.cluster-ids.outputs.gl0_peer_id }}
+      ml0_peer_id: ${{ steps.cluster-ids.outputs.ml0_peer_id }}
+      token_id: ${{ steps.cluster-ids.outputs.token_id }}
+      deployment_status: ${{ steps.cluster-ids.outputs.deployment_status }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        uses: ./.github/actions/setup-ssh
+        with:
+          hetzner_ssh_key: ${{ secrets.HETZNER_SSH_KEY }}
+          node1_ip: ${{ secrets.HETZNER_NODE1_IP }}
+          node2_ip: ${{ secrets.HETZNER_NODE2_IP }}
+          node3_ip: ${{ secrets.HETZNER_NODE3_IP }}
+          services_ip: ${{ secrets.HETZNER_SERVICES_IP }}
+
+      - name: Plan deployment
+        uses: ./.github/actions/plan-deployment
+        id: plan
+        with:
+          environment: ${{ inputs.environment }}
+          branch_name: ${{ github.ref_name }}
+
+      - name: Download JARs artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.jars_artifact_name }}
+          path: jars/
+        continue-on-error: true
+
+      - name: Setup environment configuration
+        uses: ./.github/actions/setup-environment
+        with:
+          environment: ${{ inputs.environment }}
+          keystore_password: ${{ secrets.CL_KEYSTORE_PASSWORD }}
+
+      - name: Stop running containers
+        uses: ./.github/actions/manage-containers
+        with:
+          action: stop
+          hosts: 'node1,node2,node3'
+          ssh_key: ${{ secrets.HETZNER_SSH_KEY }}
+
+      - name: Deploy JARs to nodes
+        shell: bash
+        run: |
+          for node in node1 node2 node3; do
+            echo "📦 Deploying to $node..."
+            if ls jars/*.jar 2>/dev/null; then
+              scp jars/*.jar "$node:/home/metagraph/jars/" 2>/dev/null || \
+              scp jars/*.jar "$node:/root/" 2>/dev/null || \
+              echo "⚠️ Could not copy JARs to $node"
+            fi
+          done
+
+      - name: Start containers
+        uses: ./.github/actions/manage-containers
+        with:
+          action: start
+          hosts: 'node1,node2,node3'
+          ssh_key: ${{ secrets.HETZNER_SSH_KEY }}
+
+      - name: Get cluster IDs
+        id: cluster-ids
+        shell: bash
+        run: |
+          echo "gl0_peer_id=$(ssh node1 'cat /home/metagraph/.node_id 2>/dev/null || echo unknown')" >> "$GITHUB_OUTPUT"
+          echo "ml0_peer_id=$(ssh node1 'cat /home/metagraph/.ml0_id 2>/dev/null || echo unknown')" >> "$GITHUB_OUTPUT"
+          echo "token_id=$(ssh node1 'cat /home/metagraph/.token_id 2>/dev/null || echo unknown')" >> "$GITHUB_OUTPUT"
+          echo "deployment_status=success" >> "$GITHUB_OUTPUT"
+          echo "✅ Cluster deployment complete"

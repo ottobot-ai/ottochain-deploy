@@ -1,0 +1,45 @@
+# Staging Environment - Pre-Production Validation
+# Source: pinned versions (release candidates)
+# Auto-deploy: manual promotion from beta
+
+name: staging
+mode: version
+auto_deploy: false
+
+sources:
+  tessellation:
+    type: upstream
+    version: v4.0.0-rc.2
+    
+  metakit:
+    type: upstream
+    version: main  # TODO: pin to version when available
+    
+  ottochain:
+    type: core
+    version: "0.6.0"
+    
+  sdk:
+    type: ecosystem
+    version: "0.2.1"
+    
+  services:
+    type: ecosystem
+    version: "0.1.0"
+    
+  explorer:
+    type: ecosystem
+    version: "0.1.0"
+    
+  monitoring:
+    type: ecosystem
+    version: "0.1.0"
+
+infrastructure:
+  cluster: null  # TBD - separate infrastructure
+  nodes: []
+  services_host: null
+
+# Promotion requires:
+# - All smoke tests pass on beta
+# - Manual approval
