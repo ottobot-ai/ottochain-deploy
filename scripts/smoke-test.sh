@@ -6,10 +6,11 @@
 set -euo pipefail
 
 # Configuration (override via env vars)
-BRIDGE_URL="${BRIDGE_URL:-http://5.78.121.248:3030}"
-INDEXER_URL="${INDEXER_URL:-http://5.78.121.248:3031}"
-GATEWAY_URL="${GATEWAY_URL:-http://5.78.121.248:4000}"
-ML0_URL="${ML0_URL:-http://5.78.90.207:9200}"
+# URLs must be provided via environment variables (no hardcoded IPs)
+BRIDGE_URL="${BRIDGE_URL:?BRIDGE_URL environment variable required}"
+INDEXER_URL="${INDEXER_URL:?INDEXER_URL environment variable required}"
+GATEWAY_URL="${GATEWAY_URL:?GATEWAY_URL environment variable required}"
+ML0_URL="${ML0_URL:?ML0_URL environment variable required}"
 TRAFFIC_DURATION="${TRAFFIC_DURATION:-60}"
 
 # Colors
