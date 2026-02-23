@@ -9,14 +9,14 @@
 #   3. version-bump.yml updates this file automatically
 #   4. Merge triggers deploy-on-merge.yml → deploys to scratch env
 
-# Last updated: 2026-02-19
+# Last updated: 2026-02-22
 # Updated by: version consolidation
 
 # === Component Versions ===
 components:
   # OttoChain metagraph (Scala) - builds JARs
   ottochain:
-    version: "0.7.5"
+    version: "0.7.6"
     repo: "scasplte2/ottochain"
   # Tessellation SDK version (external dependency)
   tessellation:
