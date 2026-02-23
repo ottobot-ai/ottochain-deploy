@@ -9,8 +9,8 @@
 #   3. version-bump.yml updates this file automatically
 #   4. Merge triggers deploy-on-merge.yml → deploys to scratch env
 
-# Last updated: 2026-02-22
-# Updated by: version consolidation
+# Last updated: 2026-02-23
+# Updated by: @think (SDK 1.0.1→1.0.3 to match Feb 23 release)
 
 # === Component Versions ===
 components:
@@ -24,7 +24,7 @@ components:
     repo: "Constellation-Labs/tessellation"
   # OttoChain SDK (TypeScript) - published to npmjs.com as @ottochain/sdk
   sdk:
-    version: "1.0.1"
+    version: "1.0.3"
     repo: "ottobot-ai/ottochain-sdk"
     package: "@ottochain/sdk"
     registry: "https://registry.npmjs.org"
