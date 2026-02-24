@@ -174,6 +174,7 @@ jobs:
               environment:
                 - SERVICE=monitor
                 - NODE_ENV=production
+                - MONITOR_AUTH=false
                 - DATABASE_URL=${DATABASE_URL}
                 - METAGRAPH_ML0_URL=${METAGRAPH_ML0_URL}
                 - METAGRAPH_DL1_URL=${METAGRAPH_DL1_URL}
