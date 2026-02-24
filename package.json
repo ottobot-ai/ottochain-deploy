@@ -1,0 +1,16 @@
+{
+  "name": "ottochain-deploy",
+  "version": "1.0.0",
+  "description": "OttoChain deployment and infrastructure automation",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^1.2.0",
+    "@types/node": "^20.11.0",
+    "js-yaml": "^4.1.0",
+    "@types/js-yaml": "^4.0.9"
+  },
+  "type": "module"
+}
