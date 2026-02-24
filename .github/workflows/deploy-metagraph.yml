@@ -903,3 +903,49 @@ jobs:
           echo "**GL0 Peer ID**: \`${{ needs.deploy.outputs.gl0_peer_id }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**ML0 Peer ID**: \`${{ needs.deploy.outputs.ml0_peer_id }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Token ID**: \`${{ needs.deploy.outputs.token_id }}\`" >> $GITHUB_STEP_SUMMARY
+
+  update-deployed-state:
+    name: Update Deployed State
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: success()
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup yq
+        uses: mikefarah/yq@v4
+
+      - name: Configure Git
+        run: |
+          git config user.name "OttoBot"
+          git config user.email "ottobot@kd5ujc.xyz"
+
+      - name: Update deployed state
+        run: |
+          OTTOCHAIN_VERSION=$(yq '.components.ottochain.version' versions.yaml)
+          NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          yq -i ".deployed.scratch.ottochain = \"$OTTOCHAIN_VERSION\"" versions.yaml
+          yq -i ".deployed.scratch.timestamp = \"$NOW\"" versions.yaml
+          yq -i ".deployed.scratch.workflow_run = \"$GITHUB_RUN_ID\"" versions.yaml
+
+          echo "Updated deployed.scratch:"
+          yq '.deployed.scratch' versions.yaml
+
+      - name: Commit deployed state
+        run: |
+          OTTOCHAIN_VERSION=$(yq '.components.ottochain.version' versions.yaml)
+          git add versions.yaml
+
+          # No-op guard: skip commit if no changes
+          if git diff --cached --quiet; then
+            echo "No changes, skipping commit"
+            exit 0
+          fi
+
+          git commit -m "chore: update deployed.scratch.ottochain to $OTTOCHAIN_VERSION [skip ci]"
+          git push

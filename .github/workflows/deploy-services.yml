@@ -487,3 +487,53 @@ jobs:
           echo "**Services Version**: \`${{ inputs.services_version || 'latest' }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Explorer Version**: \`${{ inputs.explorer_version || 'latest' }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Explorer**: http://${{ secrets.HETZNER_SERVICES_IP }}:8080" >> $GITHUB_STEP_SUMMARY
+
+  update-deployed-state:
+    name: Update Deployed State
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: success()
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup yq
+        uses: mikefarah/yq@v4
+
+      - name: Configure Git
+        run: |
+          git config user.name "OttoBot"
+          git config user.email "ottobot@kd5ujc.xyz"
+
+      - name: Update deployed state
+        run: |
+          SERVICES_VERSION=$(yq '.components.services.version' versions.yaml)
+          EXPLORER_VERSION=$(yq '.components.explorer.version' versions.yaml)
+          MONITORING_VERSION=$(yq '.components.monitoring.version' versions.yaml)
+          NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          yq -i ".deployed.scratch.services = \"$SERVICES_VERSION\"" versions.yaml
+          yq -i ".deployed.scratch.explorer = \"$EXPLORER_VERSION\"" versions.yaml
+          yq -i ".deployed.scratch.monitoring = \"$MONITORING_VERSION\"" versions.yaml
+          yq -i ".deployed.scratch.timestamp = \"$NOW\"" versions.yaml
+          yq -i ".deployed.scratch.workflow_run = \"$GITHUB_RUN_ID\"" versions.yaml
+
+          echo "Updated deployed.scratch:"
+          yq '.deployed.scratch' versions.yaml
+
+      - name: Commit deployed state
+        run: |
+          SERVICES_VERSION=$(yq '.components.services.version' versions.yaml)
+          git add versions.yaml
+
+          # No-op guard: skip commit if no changes
+          if git diff --cached --quiet; then
+            echo "No changes, skipping commit"
+            exit 0
+          fi
+
+          git commit -m "chore: update deployed.scratch.services to $SERVICES_VERSION [skip ci]"
+          git push
