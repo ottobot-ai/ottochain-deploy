@@ -63,6 +63,14 @@ jobs:
           services_ip: ${{ secrets.HETZNER_SERVICES_IP }}
           hosts: nodes-and-services
 
+      - name: GHCR login on services server
+        uses: ./.github/actions/docker-login-pull
+        with:
+          github_token: ${{ secrets.DEPLOY_REPO_TOKEN }}
+          image: ghcr.io/ottobot-ai/ottochain-services
+          hosts: services
+          pull: 'false'
+
       - name: Prepare remote directory
         run: |
           ssh services "mkdir -p /opt/ottochain-services"
@@ -88,6 +96,7 @@ jobs:
                 - DATABASE_URL=${DATABASE_URL}
                 - METAGRAPH_ML0_URL=${METAGRAPH_ML0_URL}
                 - METAGRAPH_DL1_URL=${METAGRAPH_DL1_URL}
+                - METAGRAPH_DL1_URLS=${METAGRAPH_DL1_URLS}
                 - GL0_URL=${GL0_URL}
                 - METAGRAPH_ID=${METAGRAPH_ID}
                 - REDIS_URL=${REDIS_URL:-redis://redis:6379}
@@ -96,7 +105,7 @@ jobs:
               networks:
                 - ottochain
               healthcheck:
-                test: ["CMD", "wget", "-q", "--spider", "http://localhost:4000/health"]
+                test: ["CMD-SHELL", "curl -sf http://localhost:4000/health || exit 1"]
                 interval: 30s
                 timeout: 10s
                 retries: 3
@@ -113,6 +122,7 @@ jobs:
                 - DATABASE_URL=${DATABASE_URL}
                 - METAGRAPH_ML0_URL=${METAGRAPH_ML0_URL}
                 - METAGRAPH_DL1_URL=${METAGRAPH_DL1_URL}
+                - METAGRAPH_DL1_URLS=${METAGRAPH_DL1_URLS}
                 - GL0_URL=${GL0_URL}
                 - METAGRAPH_ID=${METAGRAPH_ID}
                 - REDIS_URL=${REDIS_URL:-redis://redis:6379}
@@ -121,7 +131,7 @@ jobs:
               networks:
                 - ottochain
               healthcheck:
-                test: ["CMD", "wget", "-q", "--spider", "http://localhost:3030/health"]
+                test: ["CMD-SHELL", "curl -sf http://localhost:3030/health || exit 1"]
                 interval: 30s
                 timeout: 10s
                 retries: 3
@@ -138,6 +148,7 @@ jobs:
                 - DATABASE_URL=${DATABASE_URL}
                 - METAGRAPH_ML0_URL=${METAGRAPH_ML0_URL}
                 - METAGRAPH_DL1_URL=${METAGRAPH_DL1_URL}
+                - METAGRAPH_DL1_URLS=${METAGRAPH_DL1_URLS}
                 - GL0_URL=${GL0_URL}
                 - METAGRAPH_ID=${METAGRAPH_ID}
                 - REDIS_URL=${REDIS_URL:-redis://redis:6379}
@@ -149,7 +160,7 @@ jobs:
               networks:
                 - ottochain
               healthcheck:
-                test: ["CMD", "wget", "-q", "--spider", "http://localhost:3031/health"]
+                test: ["CMD-SHELL", "curl -sf http://localhost:3031/health || exit 1"]
                 interval: 30s
                 timeout: 10s
                 retries: 3
@@ -166,6 +177,7 @@ jobs:
                 - DATABASE_URL=${DATABASE_URL}
                 - METAGRAPH_ML0_URL=${METAGRAPH_ML0_URL}
                 - METAGRAPH_DL1_URL=${METAGRAPH_DL1_URL}
+                - METAGRAPH_DL1_URLS=${METAGRAPH_DL1_URLS}
                 - GL0_URL=${GL0_URL}
                 - METAGRAPH_ID=${METAGRAPH_ID}
                 - REDIS_URL=${REDIS_URL:-redis://redis:6379}
@@ -174,7 +186,7 @@ jobs:
               networks:
                 - ottochain
               healthcheck:
-                test: ["CMD", "wget", "-q", "--spider", "http://localhost:3032/health"]
+                test: ["CMD-SHELL", "curl -sf http://localhost:3032/health || exit 1"]
                 interval: 30s
                 timeout: 10s
                 retries: 3
@@ -189,6 +201,8 @@ jobs:
                 - BRIDGE_URL=http://bridge:3030
                 - METAGRAPH_ML0_URL=${METAGRAPH_ML0_URL}
                 - ML0_URL=${METAGRAPH_ML0_URL}
+                - METAGRAPH_DL1_URL=${METAGRAPH_DL1_URL}
+                - METAGRAPH_DL1_URLS=${METAGRAPH_DL1_URLS}
                 - GL0_URL=${GL0_URL}
                 - INDEXER_URL=http://indexer:3031
                 - TRAFFIC_INTERVAL=${TRAFFIC_INTERVAL:-5000}
@@ -261,6 +275,9 @@ jobs:
       - name: Write .env
         run: |
           METAGRAPH_IP="${{ secrets.HETZNER_NODE1_IP }}"
+          NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
+          NODE2_IP="${{ secrets.HETZNER_NODE2_IP }}"
+          NODE3_IP="${{ secrets.HETZNER_NODE3_IP }}"
           SERVICES_VERSION="${{ inputs.services_version || 'latest' }}"
           EXPLORER_VERSION="${{ inputs.explorer_version || 'latest' }}"
           
@@ -295,6 +312,8 @@ jobs:
           # Metagraph endpoints
           METAGRAPH_ML0_URL=http://${METAGRAPH_IP}:9200
           METAGRAPH_DL1_URL=http://${METAGRAPH_IP}:9400
+          # Multi-node DL1 fan-out (PR #136 feature)
+          METAGRAPH_DL1_URLS=http://${NODE1_IP}:9400,http://${NODE2_IP}:9400,http://${NODE3_IP}:9400
           GL0_URL=http://${METAGRAPH_IP}:9000
           GL1_URL=http://${METAGRAPH_IP}:9100
           ML0_URL=http://${METAGRAPH_IP}:9200
@@ -413,9 +432,11 @@ jobs:
       - name: Health check
         run: |
           echo "Waiting for services to start..."
-          sleep 15
-          
+          sleep 30
+
           echo "Checking services health..."
+          FAILED=0
+
           for service in gateway bridge indexer monitor; do
             case $service in
               gateway) port=4000 ;; bridge) port=3030 ;; indexer) port=3031 ;; monitor) port=3032 ;;
@@ -425,9 +446,13 @@ jobs:
               echo "✅ $service: healthy"
             else
               echo "⚠️ $service: HTTP $status"
+              # Hard-fail on critical services; warn-only on indexer (Prisma migrations are slow) and monitor
+              if [ "$service" = "gateway" ] || [ "$service" = "bridge" ]; then
+                FAILED=1
+              fi
             fi
           done
-          
+
           # Check explorer
           explorer=$(ssh services "curl -sf -o /dev/null -w '%{http_code}' http://localhost:8081" || echo "000")
           if [ "$explorer" = "200" ]; then
@@ -435,6 +460,12 @@ jobs:
           else
             echo "⚠️ explorer: HTTP $explorer"
           fi
+
+          if [ $FAILED -eq 1 ]; then
+            echo "❌ Critical services unhealthy — deploy failed"
+            exit 1
+          fi
+          echo "✅ All critical services healthy"
 
       - name: Summary
         run: |
