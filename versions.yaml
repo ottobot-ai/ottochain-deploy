@@ -16,11 +16,11 @@
 components:
   # OttoChain metagraph (Scala) - builds JARs
   ottochain:
-    version: "0.7.6"
+    version: "0.7.7"
     repo: "scasplte2/ottochain"
   # Tessellation SDK version (external dependency)
   tessellation:
-    version: "4.0.0-rc.2"
+    version: "4.0.0-rc.6"
     repo: "Constellation-Labs/tessellation"
   # OttoChain SDK (TypeScript) - published to npmjs.com as @ottochain/sdk
   sdk:
