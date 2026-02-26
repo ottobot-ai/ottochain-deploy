@@ -35,7 +35,7 @@ jobs:
 
     steps:
       - name: Checkout (needed for composite actions)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup SSH
         uses: ./.github/actions/setup-ssh
