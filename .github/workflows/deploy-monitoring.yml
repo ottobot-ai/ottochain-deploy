@@ -130,6 +130,21 @@ jobs:
               networks:
                 - monitoring
 
+            health-monitor:
+              image: ghcr.io/ottobot-ai/ottochain-health-monitor:latest
+              container_name: health-monitor
+              restart: unless-stopped
+              ports:
+                - "3032:3032"
+              env_file:
+                - .env
+              environment:
+                - SSH_KEY_PATH=/home/monitor/.ssh/id_rsa
+              volumes:
+                - /root/.ssh/hetzner_ottobot:/home/monitor/.ssh/id_rsa:ro
+              networks:
+                - monitoring
+
           volumes:
             prometheus_data:
             grafana_data:
@@ -421,12 +436,33 @@ jobs:
         run: |
           ssh services "cat > /opt/ottochain-monitoring/.env" << ENV_EOF
           GRAFANA_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          NODE_IPS=${{ secrets.HETZNER_NODE1_IP }},${{ secrets.HETZNER_NODE2_IP }},${{ secrets.HETZNER_NODE3_IP }}
+          NODE_NAMES=node1,node2,node3
+          SSH_USER=root
+          SNAPSHOT_STALL_MINUTES=4
+          HEALTH_CHECK_INTERVAL=60
+          RESTART_COOLDOWN_MINUTES=10
+          MAX_RESTARTS_PER_HOUR=6
           ENV_EOF
+
+      - name: Setup health monitor SSH key
+        run: |
+          ssh services << 'SSHSETUP'
+          # Health monitor needs SSH access to metagraph nodes for auto-restart
+          if [ ! -f /root/.ssh/hetzner_ottobot ]; then
+            echo "⚠️ SSH key not found at /root/.ssh/hetzner_ottobot"
+            echo "Health monitor auto-restart will not work without it."
+          else
+            chmod 600 /root/.ssh/hetzner_ottobot
+            echo "✓ SSH key present for health monitor"
+          fi
+          SSHSETUP
 
       - name: Deploy stack
         run: |
           ssh services << 'DEPLOY'
           cd /opt/ottochain-monitoring
+          echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           docker compose pull
           docker compose up -d
           docker compose ps
@@ -456,7 +492,7 @@ jobs:
       - name: Health check
         run: |
           echo "Checking monitoring stack..."
-          sleep 10
+          sleep 15
           
           prom=$(ssh services "curl -sf -o /dev/null -w '%{http_code}' http://localhost:9090/-/healthy" || echo "000")
           echo "Prometheus: HTTP $prom"
@@ -466,6 +502,9 @@ jobs:
           
           alertmgr=$(ssh services "curl -sf -o /dev/null -w '%{http_code}' http://localhost:9093/-/healthy" || echo "000")
           echo "Alertmanager: HTTP $alertmgr"
+          
+          monitor=$(ssh services "docker ps --filter name=health-monitor --format '{{.Status}}'" || echo "not running")
+          echo "Health Monitor: $monitor"
 
       - name: Summary
         run: |
@@ -478,4 +517,6 @@ jobs:
           echo "| Alertmanager | 9093 | http://${{ secrets.HETZNER_SERVICES_IP }}:9093 |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Grafana Login**: admin / (from GRAFANA_ADMIN_PASSWORD secret)" >> $GITHUB_STEP_SUMMARY
+          echo "| Health Monitor | 3032 | http://${{ secrets.HETZNER_SERVICES_IP }}:3032 |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Node Exporters**: ${{ inputs.include_exporters && 'Deployed' || 'Skipped' }}" >> $GITHUB_STEP_SUMMARY
