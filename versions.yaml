@@ -40,8 +40,13 @@ components:
     image: "ghcr.io/ottobot-ai/ottochain-explorer"
   # OttoChain Monitoring (configs/dashboards)
   monitoring:
-    version: "0.1.0"
+    version: "1.0.0"
     repo: "ottobot-ai/ottochain-monitoring"
+  # OttoChain Health Monitor (fork detection & auto-restart)
+  health-monitor:
+    version: "1.0.0"
+    repo: "ottobot-ai/ottochain-monitoring"
+    image: "ghcr.io/ottobot-ai/ottochain-health-monitor"
 # === Monitoring Tool Versions ===
 monitoring_tools:
   prometheus: "v2.50.0"
