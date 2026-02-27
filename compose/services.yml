@@ -82,6 +82,10 @@ services:
       INDEXER_URL: http://indexer:3031
       GATEWAY_URL: http://gateway:4000
       POLL_INTERVAL_MS: ${POLL_INTERVAL_MS:-10000}
+      # Hypergraph (Global L0) tracking. For scratch, same as GL0.
+      # For testnet: https://l0-lb-testnet.constellationnetwork.io
+      # For mainnet: https://l0-lb-mainnet.constellationnetwork.io
+      HYPERGRAPH_L0_URLS: ${HYPERGRAPH_L0_URLS:-${GL0_URLS:-http://host.docker.internal:9000}}
       MONITOR_USER: ${MONITOR_USER:-admin}
       MONITOR_PASS: ${MONITOR_PASS:-}
     depends_on:
