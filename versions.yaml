@@ -16,7 +16,7 @@
 components:
   # OttoChain metagraph (Scala) - builds JARs
   ottochain:
-    version: "0.7.8"
+    version: "0.7.9"
     repo: "scasplte2/ottochain"
   # Tessellation SDK version (external dependency)
   tessellation:
