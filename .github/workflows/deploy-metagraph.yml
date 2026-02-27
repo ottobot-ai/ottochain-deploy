@@ -138,6 +138,18 @@ jobs:
           echo ""
           echo "All keys verified. L1 consensus should work."
 
+      - name: Distribute logging configuration
+        run: |
+          echo "=== Setting up file logging configuration ==="
+          # Distribute logback.xml to all nodes for file-based logging
+          # Logs will be written to /ottochain/logs/ with automatic rotation
+          
+          for host in node1 node2 node3; do
+            scp config/logback.xml $host:/opt/ottochain/logback.xml
+            ssh $host "test -f /opt/ottochain/logback.xml" && echo "✓ logback.xml deployed to $host" || echo "ERROR: logback.xml missing on $host"
+          done
+
+
       - name: Detect if genesis is needed
         id: genesis-check
         run: |
@@ -231,7 +243,8 @@ jobs:
             -p 9000:9000 -p 9001:9001 -p 9002:9002 \
             -v /opt/ottochain/keys:/ottochain/keys:ro \
             -v /opt/ottochain/gl0-data:/ottochain/data \
-            -v /opt/ottochain/gl0-logs:/tessellation/logs \
+            -v /opt/ottochain/gl0-logs:/ottochain/logs \
+              -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
             -v /opt/ottochain/genesis:/ottochain/genesis:ro \
             -e LAYER=gl0 \
             -e IS_INITIAL=true \
@@ -241,7 +254,7 @@ jobs:
             -e CL_KEYSTORE=/ottochain/keys/key.p12 \
             -e CL_KEYALIAS=alias \
             -e CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
-            -e JAVA_OPTS='-Xmx8g -Xms4g' \
+            -e JAVA_OPTS='-Xmx8g -Xms4g -Dlogback.configurationFile=/ottochain/logback.xml' \
             ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
 
       - name: Wait for GL0 to be Ready
@@ -275,13 +288,14 @@ jobs:
               -p 9000:9000 -p 9001:9001 -p 9002:9002 \
               -v /opt/ottochain/${KEYS}:/ottochain/keys:ro \
               -v /opt/ottochain/gl0-data:/ottochain/data \
-              -v /opt/ottochain/gl0-logs:/tessellation/logs \
+              -v /opt/ottochain/gl0-logs:/ottochain/logs \
+              -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
               -e LAYER=gl0 \
               -e CL_APP_ENV=dev \
               -e CL_EXTERNAL_IP=${IP} \
               -e CL_COLLATERAL=0 \
               -e CL_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }} \
-              -e JAVA_OPTS='-Xmx8g -Xms4g' \
+              -e JAVA_OPTS='-Xmx8g -Xms4g -Dlogback.configurationFile=/ottochain/logback.xml' \
               ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
           done
 
@@ -329,7 +343,8 @@ jobs:
             -p 9100:9100 -p 9101:9101 -p 9102:9102 \
             -v /opt/ottochain/keys:/ottochain/keys:ro \
             -v /opt/ottochain/gl1-data:/ottochain/data \
-            -v /opt/ottochain/gl1-logs:/tessellation/logs \
+            -v /opt/ottochain/gl1-logs:/ottochain/logs \
+              -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
             -e LAYER=gl1 \
             -e IS_INITIAL=true \
             -e CL_APP_ENV=dev \
@@ -339,7 +354,7 @@ jobs:
             -e CL_L0_PEER_HOST=${NODE1_IP} \
             -e CL_L0_PEER_PORT=9000 \
             -e CL_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }} \
-            -e JAVA_OPTS="-Xmx4g -Xms2g" \
+            -e JAVA_OPTS="-Xmx4g -Xms2g -Dlogback.configurationFile=/ottochain/logback.xml" \
             ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}
           EOF
 
@@ -365,7 +380,8 @@ jobs:
               -p 9100:9100 -p 9101:9101 -p 9102:9102 \
               -v /opt/ottochain/${KEYS}:/ottochain/keys:ro \
               -v /opt/ottochain/gl1-data:/ottochain/data \
-              -v /opt/ottochain/gl1-logs:/tessellation/logs \
+              -v /opt/ottochain/gl1-logs:/ottochain/logs \
+              -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
               -e LAYER=gl1 \
               -e CL_APP_ENV=dev \
               -e CL_EXTERNAL_IP=${IP} \
@@ -374,7 +390,7 @@ jobs:
               -e CL_L0_PEER_HOST=${NODE1_IP} \
               -e CL_L0_PEER_PORT=9000 \
               -e CL_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }} \
-              -e JAVA_OPTS='-Xmx4g -Xms2g' \
+              -e JAVA_OPTS='-Xmx4g -Xms2g -Dlogback.configurationFile=/ottochain/logback.xml' \
               ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
           done
 
@@ -493,7 +509,8 @@ jobs:
             -p 9200:9200 -p 9201:9201 -p 9202:9202 \
             -v /opt/ottochain/keys:/ottochain/keys:ro \
             -v /opt/ottochain/ml0-data:/ottochain/data \
-            -v /opt/ottochain/ml0-logs:/tessellation/logs \
+            -v /opt/ottochain/ml0-logs:/ottochain/logs \
+              -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
             -v /opt/ottochain/genesis:/ottochain/genesis:ro \
             -e LAYER=ml0 \
             -e IS_INITIAL=true \
@@ -511,7 +528,7 @@ jobs:
             -e CL_PUBLIC_HTTP_PORT=9200 \
             -e CL_P2P_HTTP_PORT=9201 \
             -e CL_CLI_HTTP_PORT=9202 \
-            -e JAVA_OPTS='-Xmx8g -Xms4g' \
+            -e JAVA_OPTS='-Xmx8g -Xms4g -Dlogback.configurationFile=/ottochain/logback.xml' \
             ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
 
       - name: Wait for ML0 to be Ready
@@ -560,7 +577,8 @@ jobs:
               -p 9200:9200 -p 9201:9201 -p 9202:9202 \
               -v /opt/ottochain/${KEYS}:/ottochain/keys:ro \
               -v /opt/ottochain/ml0-data:/ottochain/data \
-              -v /opt/ottochain/ml0-logs:/tessellation/logs \
+              -v /opt/ottochain/ml0-logs:/ottochain/logs \
+              -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
               -e LAYER=ml0 \
               -e CL_KEYSTORE=/ottochain/keys/key.p12 \
               -e CL_KEYALIAS=alias \
@@ -577,7 +595,7 @@ jobs:
               -e CL_P2P_HTTP_PORT=9201 \
               -e CL_CLI_HTTP_PORT=9202 \
               -e CL_TOKEN_ID=${TOKEN_ID} \
-              -e JAVA_OPTS='-Xmx8g -Xms4g' \
+              -e JAVA_OPTS='-Xmx8g -Xms4g -Dlogback.configurationFile=/ottochain/logback.xml' \
               ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
           done
 
@@ -626,7 +644,8 @@ jobs:
             -p 9300:9300 -p 9301:9301 -p 9302:9302 \
             -v /opt/ottochain/keys:/ottochain/keys:ro \
             -v /opt/ottochain/cl1-data:/ottochain/data \
-            -v /opt/ottochain/cl1-logs:/tessellation/logs \
+            -v /opt/ottochain/cl1-logs:/ottochain/logs \
+              -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
             -e LAYER=cl1 \
             -e IS_INITIAL=true \
             -e CL_KEYSTORE=/ottochain/keys/key.p12 \
@@ -649,7 +668,7 @@ jobs:
             -e CL_PUBLIC_HTTP_PORT=9300 \
             -e CL_P2P_HTTP_PORT=9301 \
             -e CL_CLI_HTTP_PORT=9302 \
-            -e JAVA_OPTS='-Xmx4g -Xms2g' \
+            -e JAVA_OPTS='-Xmx4g -Xms2g -Dlogback.configurationFile=/ottochain/logback.xml' \
             ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
 
           for i in $(seq 1 60); do
@@ -674,7 +693,8 @@ jobs:
               -p 9300:9300 -p 9301:9301 -p 9302:9302 \
               -v /opt/ottochain/${KEYS}:/ottochain/keys:ro \
               -v /opt/ottochain/cl1-data:/ottochain/data \
-              -v /opt/ottochain/cl1-logs:/tessellation/logs \
+              -v /opt/ottochain/cl1-logs:/ottochain/logs \
+              -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
               -e LAYER=cl1 \
               -e CL_KEYSTORE=/ottochain/keys/key.p12 \
               -e CL_KEYALIAS=alias \
@@ -696,7 +716,7 @@ jobs:
               -e CL_PUBLIC_HTTP_PORT=9300 \
               -e CL_P2P_HTTP_PORT=9301 \
               -e CL_CLI_HTTP_PORT=9302 \
-              -e JAVA_OPTS='-Xmx4g -Xms2g' \
+              -e JAVA_OPTS='-Xmx4g -Xms2g -Dlogback.configurationFile=/ottochain/logback.xml' \
               ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
           done
 
@@ -726,7 +746,8 @@ jobs:
             -p 9400:9400 -p 9401:9401 -p 9402:9402 \
             -v /opt/ottochain/keys:/ottochain/keys:ro \
             -v /opt/ottochain/dl1-data:/ottochain/data \
-            -v /opt/ottochain/dl1-logs:/tessellation/logs \
+            -v /opt/ottochain/dl1-logs:/ottochain/logs \
+              -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
             -e LAYER=dl1 \
             -e IS_INITIAL=true \
             -e CL_KEYSTORE=/ottochain/keys/key.p12 \
@@ -749,7 +770,7 @@ jobs:
             -e CL_PUBLIC_HTTP_PORT=9400 \
             -e CL_P2P_HTTP_PORT=9401 \
             -e CL_CLI_HTTP_PORT=9402 \
-            -e JAVA_OPTS='-Xmx4g -Xms2g' \
+            -e JAVA_OPTS='-Xmx4g -Xms2g -Dlogback.configurationFile=/ottochain/logback.xml' \
             ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
 
           for i in $(seq 1 60); do
@@ -774,7 +795,8 @@ jobs:
               -p 9400:9400 -p 9401:9401 -p 9402:9402 \
               -v /opt/ottochain/${KEYS}:/ottochain/keys:ro \
               -v /opt/ottochain/dl1-data:/ottochain/data \
-              -v /opt/ottochain/dl1-logs:/tessellation/logs \
+              -v /opt/ottochain/dl1-logs:/ottochain/logs \
+              -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
               -e LAYER=dl1 \
               -e CL_KEYSTORE=/ottochain/keys/key.p12 \
               -e CL_KEYALIAS=alias \
@@ -796,7 +818,7 @@ jobs:
               -e CL_PUBLIC_HTTP_PORT=9400 \
               -e CL_P2P_HTTP_PORT=9401 \
               -e CL_CLI_HTTP_PORT=9402 \
-              -e JAVA_OPTS='-Xmx4g -Xms2g' \
+              -e JAVA_OPTS='-Xmx4g -Xms2g -Dlogback.configurationFile=/ottochain/logback.xml' \
               ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
           done
 
