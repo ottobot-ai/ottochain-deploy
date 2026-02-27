@@ -1271,7 +1271,7 @@
     }
   ],
   "refresh": "30s",
-  "schemaVersion": 38,
+  "schemaVersion": 39,
   "tags": [
     "ottochain",
     "tessellation",
