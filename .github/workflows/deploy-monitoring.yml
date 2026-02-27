@@ -80,7 +80,7 @@ jobs:
               depends_on:
                 - alertmanager
               networks:
-                - monitoring
+                - ottochain
                 - ottochain
 
             alertmanager:
@@ -96,7 +96,7 @@ jobs:
                 - '--config.file=/etc/alertmanager/alertmanager.yml'
                 - '--storage.path=/alertmanager'
               networks:
-                - monitoring
+                - ottochain
 
             grafana:
               image: grafana/grafana:10.3.1
@@ -116,7 +116,7 @@ jobs:
               depends_on:
                 - prometheus
               networks:
-                - monitoring
+                - ottochain
 
             loki:
               image: grafana/loki:2.9.4
@@ -129,7 +129,7 @@ jobs:
                 - loki_data:/loki
               command: -config.file=/etc/loki/local-config.yaml
               networks:
-                - monitoring
+                - ottochain
 
             health-monitor:
               image: ghcr.io/ottobot-ai/ottochain-health-monitor:latest
@@ -144,7 +144,7 @@ jobs:
               volumes:
                 - /root/.ssh/hetzner_ottobot:/home/monitor/.ssh/id_rsa:ro
               networks:
-                - monitoring
+                - ottochain
 
           volumes:
             prometheus_data:
@@ -153,8 +153,6 @@ jobs:
             loki_data:
 
           networks:
-            monitoring:
-              driver: bridge
             ottochain:
               external: true
           COMPOSE_EOF
@@ -162,6 +160,9 @@ jobs:
       - name: Write prometheus.yml
         run: |
           METAGRAPH_IP="${{ secrets.HETZNER_NODE1_IP }}"
+          NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
+          NODE2_IP="${{ secrets.HETZNER_NODE2_IP }}"
+          NODE3_IP="${{ secrets.HETZNER_NODE3_IP }}"
           SERVICES_IP="${{ secrets.HETZNER_SERVICES_IP }}"
 
           ssh services "cat > /opt/ottochain-monitoring/prometheus/prometheus.yml" << PROM_EOF
@@ -226,11 +227,15 @@ jobs:
 
             - job_name: 'node-metagraph'
               static_configs:
-                - targets: ['${METAGRAPH_IP}:9100']
-              relabel_configs:
-                - source_labels: [__address__]
-                  target_label: instance
-                  replacement: 'metagraph'
+                - targets: ['${NODE1_IP}:9100']
+                  labels:
+                    node: 'node1'
+                - targets: ['${NODE2_IP}:9100']
+                  labels:
+                    node: 'node2'
+                - targets: ['${NODE3_IP}:9100']
+                  labels:
+                    node: 'node3'
 
             - job_name: 'prometheus'
               static_configs:
