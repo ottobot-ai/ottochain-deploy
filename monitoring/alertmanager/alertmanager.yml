@@ -1,9 +1,7 @@
 # Alertmanager Configuration
 #
-# IMPORTANT: Replace TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID with your values
-# before deploying. Alertmanager does not support env var substitution.
-#
-# Alternatively, use the generate-config.sh script.
+# This is a TEMPLATE — alertmanager doesn't support env var substitution.
+# Run scripts/generate-monitoring-configs.sh to render actual configs from .env
 
 global:
   resolve_timeout: 5m
@@ -33,8 +31,8 @@ route:
 receivers:
   - name: 'telegram'
     telegram_configs:
-      - bot_token: 'YOUR_TELEGRAM_BOT_TOKEN'  # Replace with actual token
-        chat_id: 0                             # Replace with actual chat ID
+      - bot_token: '${TELEGRAM_BOT_TOKEN}'
+        chat_id: ${TELEGRAM_CHAT_ID}
         parse_mode: 'HTML'
         message: |
           {{ if eq .Status "firing" }}🚨{{ else }}✅{{ end }} <b>{{ .Status | toUpper }}</b>
