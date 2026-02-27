@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 
+  OttoChain Metagraph Logging Configuration
+  
+  Enables file-based logging with automatic rotation.
+  Logs are written to /ottochain/logs/ inside the container.
+  
+  Rotation policy (from logback-included.xml):
+    - maxFileSize: 200MB
+    - totalSizeCap: 2GB  
+    - maxHistory: 10 days
+-->
+<configuration>
+    <!-- Include tessellation's file appenders (APP, HTTP, GOSSIP, etc.) -->
+    <include resource="logback-included.xml"/>
+    
+    <!-- Also log to console for docker logs -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %highlight(%-5level) %cyan(%logger{15}) - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <!-- File logging via logback-included.xml -->
+        <appender-ref ref="APP" />
+        <appender-ref ref="APP_JSON" />
+        <!-- Console for docker logs -->
+        <appender-ref ref="STDOUT" />
+    </root>
+
+    <!-- OttoChain/Tessellation debug logging -->
+    <logger name="io.constellationnetwork" level="DEBUG" />
+    <logger name="io.constellationnetwork.httpsigner" level="INFO" additivity="false" />
+    
+    <!-- Reduce noise from HTTP middleware -->
+    <logger name="org.http4s.server.middleware.RequestLogger" level="OFF" />
+    <logger name="org.http4s.server.middleware.ResponseLogger" level="OFF" />
+    <logger name="org.http4s.client.middleware.RequestLogger" level="OFF" />
+    <logger name="org.http4s.client.middleware.ResponseLogger" level="OFF" />
+    
+    <!-- Reduce noise from ember client -->
+    <logger name="org.http4s.ember.client.EmberClientBuilderCompanionPlatform" level="ERROR" />
+    
+    <!-- Reduce noise from clickhouse -->
+    <logger name="com.clickhouse.client.api.ClientConfigProperties" level="ERROR" />
+</configuration>
