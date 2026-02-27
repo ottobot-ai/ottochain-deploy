@@ -111,7 +111,8 @@ jobs:
             local NAME=$(echo $IMAGE | cut -d'/' -f3)
             
             # Query GHCR via GitHub API for package versions
-            if gh api "orgs/$ORG/packages/container/$NAME/versions" \
+            # ottobot-ai is a user account, not an org — try both endpoints
+            if gh api "users/$ORG/packages/container/$NAME/versions" \
                 --jq ".[].metadata.container.tags[]" 2>/dev/null | grep -q "^v\?$VERSION$"; then
               echo "✅ $IMAGE:$VERSION exists in GHCR"
               return 0
