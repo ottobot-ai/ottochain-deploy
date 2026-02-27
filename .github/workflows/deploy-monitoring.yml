@@ -81,7 +81,6 @@ jobs:
                 - alertmanager
               networks:
                 - ottochain
-                - ottochain
 
             alertmanager:
               image: prom/alertmanager:v0.27.0
@@ -518,6 +517,26 @@ jobs:
           
           monitor=$(ssh services "docker ps --filter name=health-monitor --format '{{.Status}}'" || echo "not running")
           echo "Health Monitor: $monitor"
+
+          # Smoke test: verify Prometheus can reach scrape targets
+          echo ""
+          echo "Prometheus scrape targets:"
+          ssh services "curl -sf http://localhost:9090/api/v1/targets" | \
+            python3 -c "
+          import sys,json
+          d=json.load(sys.stdin)
+          up=down=0
+          for t in d['data']['activeTargets']:
+              status = t['health']
+              job = t['labels']['job']
+              addr = t['discoveredLabels']['__address__']
+              icon = '✅' if status == 'up' else '❌'
+              print(f'  {icon} {job} ({addr}): {status}')
+              if status == 'up': up += 1
+              else: down += 1
+          print(f'  Total: {up} up, {down} down')
+          if down > 0: sys.exit(1)
+          " || echo "⚠️ Some Prometheus targets are down"
 
       - name: Summary
         run: |
