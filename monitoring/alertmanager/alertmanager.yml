@@ -1,0 +1,70 @@
+# Alertmanager Configuration
+#
+# This is a TEMPLATE — alertmanager doesn't support env var substitution.
+# Run scripts/generate-monitoring-configs.sh to render actual configs from .env
+
+global:
+  resolve_timeout: 5m
+
+route:
+  # Default grouping and timing
+  group_by: ['alertname', 'job', 'severity']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: 'telegram'
+
+  routes:
+    # Critical alerts - faster repeat
+    - match:
+        severity: critical
+      receiver: 'telegram'
+      repeat_interval: 1h
+      continue: false
+
+    # Warning alerts - normal repeat
+    - match:
+        severity: warning
+      receiver: 'telegram'
+      repeat_interval: 4h
+
+receivers:
+  - name: 'telegram'
+    telegram_configs:
+      - bot_token: '${TELEGRAM_BOT_TOKEN}'
+        chat_id: ${TELEGRAM_CHAT_ID}
+        parse_mode: 'HTML'
+        message: |
+          {{ if eq .Status "firing" }}🚨{{ else }}✅{{ end }} <b>{{ .Status | toUpper }}</b>
+
+          <b>Alert:</b> {{ .CommonLabels.alertname }}
+          <b>Severity:</b> {{ .CommonLabels.severity }}
+          <b>Job:</b> {{ .CommonLabels.job }}
+
+          {{ range .Alerts }}
+          {{ if .Annotations.summary }}<b>Summary:</b> {{ .Annotations.summary }}{{ end }}
+          {{ if .Annotations.description }}{{ .Annotations.description }}{{ end }}
+          {{ end }}
+
+          <i>{{ .ExternalURL }}</i>
+
+  # Optional: Webhook receiver for OpenClaw integration
+  # - name: 'openclaw'
+  #   webhook_configs:
+  #     - url: 'http://YOUR_OPENCLAW_HOST:PORT/webhook/alertmanager'
+  #       send_resolved: true
+
+inhibit_rules:
+  # If critical is firing, suppress warning for same alert
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'job']
+
+  # If AllNodesDown is firing, suppress individual NodeDown alerts
+  - source_match:
+      alertname: 'AllNodesDown'
+    target_match:
+      alertname: 'NodeDown'
+    equal: []

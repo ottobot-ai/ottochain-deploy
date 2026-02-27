@@ -1,0 +1,128 @@
+# Prometheus Configuration Template
+# Run: ./scripts/generate-config.sh to create prometheus.yml from this template
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'ottochain'
+    env: 'production'
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+rule_files:
+  - /etc/prometheus/alert_rules/*.yml
+  - /etc/prometheus/recording_rules.yml
+
+scrape_configs:
+  # ===== Tessellation Nodes =====
+  - job_name: 'gl0'
+    static_configs:
+      - targets: ['${METAGRAPH_HOST}:9000']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  - job_name: 'ml0'
+    static_configs:
+      - targets: ['${METAGRAPH_HOST}:9200']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  - job_name: 'cl1'
+    static_configs:
+      - targets: ['${METAGRAPH_HOST}:9300']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  - job_name: 'dl1'
+    static_configs:
+      - targets: ['${METAGRAPH_HOST}:9400']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # ===== OttoChain Services =====
+  - job_name: 'monitor'
+    static_configs:
+      - targets: ['${SERVICES_HOST}:3032']
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  # ===== Infrastructure Exporters (Services Server) =====
+  - job_name: 'node-services'
+    static_configs:
+      - targets: ['${SERVICES_HOST}:9100']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'services'
+
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['${SERVICES_HOST}:9187']
+
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['${SERVICES_HOST}:9121']
+
+  # ===== Infrastructure Exporters (Metagraph Nodes) =====
+  - job_name: 'node-metagraph'
+    static_configs:
+      - targets: ['${METAGRAPH_HOST}:9100']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'metagraph'
+
+  # ===== Constellation Hypergraph (Global L0) =====
+  # Scrapes the Constellation public load balancer's /metrics endpoint, which
+  # exposes the same metric set as local tessellation nodes (dag_*, jvm_*, etc.)
+  # Available on all network environments.
+  #
+  # Usage:
+  #   Scratch cluster: Comment this out — the local GL0 IS the hypergraph.
+  #                    Use HYPERGRAPH_L0_URLS=http://<GL0_HOST>:9000 on the monitor instead.
+  #   TestNet:         Uncomment and point to l0-lb-testnet.constellationnetwork.io
+  #   MainNet:         Uncomment and point to l0-lb-mainnet.constellationnetwork.io
+  #
+  # Dashboard panels that use this job: "Hypergraph Ordinal Over Time",
+  # "State Channel Snapshots in Hypergraph (rate)", "Metagraph → Hypergraph Lag"
+  #
+  # Key metrics available:
+  #   dag_global_snapshot_ordinal          — current hypergraph ordinal
+  #   dag_global_snapshot_state_channel_snapshots_total — metagraph data flowing in
+  #   dag_consensus_duration_seconds       — hypergraph consensus timing
+  #   jvm_gc_overhead                      — hypergraph node GC health
+  #   process_uptime_seconds               — LB-fronted node uptime
+  #
+  # NOTE: The monitor also exports ottochain_hypergraph_ordinal and
+  # ottochain_hypergraph_state_channels when HYPERGRAPH_L0_URLS is set —
+  # those are the primary sources for the overview stat panels.
+  #
+  # - job_name: 'hypergraph-l0'
+  #   static_configs:
+  #     # TestNet:
+  #     - targets: ['l0-lb-testnet.constellationnetwork.io:443']
+  #     # MainNet:
+  #     # - targets: ['l0-lb-mainnet.constellationnetwork.io:443']
+  #   metrics_path: /metrics
+  #   scheme: https
+  #   scrape_interval: 30s
+  #   # The LB rotates requests across ~150 nodes; results are averaged across the fleet.
+  #   # Use honor_labels to preserve job/instance from the LB response.
+  #   honor_labels: false
+  #   relabel_configs:
+  #     - source_labels: [__address__]
+  #       target_label: instance
+  #       replacement: 'hypergraph-lb'
+
+  # ===== Self-monitoring =====
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['alertmanager:9093']

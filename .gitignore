@@ -42,3 +42,6 @@ keys/
 
 # Secrets
 secrets/
+
+# Rendered monitoring configs (generated from templates)
+monitoring/**/*.rendered.yml
