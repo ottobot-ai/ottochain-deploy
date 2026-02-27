@@ -2,26 +2,33 @@
 # Usage: docker compose -f compose/base.yml -f compose/watchdog.yml up -d
 
 services:
-  health-monitor:
-    image: ghcr.io/ottobot-ai/ottochain-health-monitor:${HEALTH_MONITOR_VERSION:-latest}
-    container_name: health-monitor
+  watchdog:
+    image: ghcr.io/ottobot-ai/ottochain-watchdog:${WATCHDOG_VERSION:-latest}
+    container_name: ottochain-watchdog
     restart: unless-stopped
-    ports:
-      - "${HEALTH_MONITOR_PORT:-3032}:3032"
     environment:
-      - NODE_IPS=${NODE_IPS}
+      - NODE_IPS=${NODE_IPS:?NODE_IPS must be set - comma-separated metagraph node IPs}
       - NODE_NAMES=${NODE_NAMES:-node1,node2,node3}
-      - SSH_KEY_PATH=/home/monitor/.ssh/id_rsa
+      - SSH_KEY_PATH=/home/watchdog/.ssh/id_rsa
       - SSH_USER=${SSH_USER:-root}
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-ottochain}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ottochain}
+      - HEALTH_DATA_STALE_SECONDS=${HEALTH_DATA_STALE_SECONDS:-60}
       - SNAPSHOT_STALL_MINUTES=${SNAPSHOT_STALL_MINUTES:-4}
       - HEALTH_CHECK_INTERVAL=${HEALTH_CHECK_INTERVAL:-60}
       - RESTART_COOLDOWN_MINUTES=${RESTART_COOLDOWN_MINUTES:-10}
       - MAX_RESTARTS_PER_HOUR=${MAX_RESTARTS_PER_HOUR:-6}
     volumes:
-      - ${SSH_KEY_PATH:-~/.ssh/hetzner_ottobot}:/home/monitor/.ssh/id_rsa:ro
+      - ${SSH_KEY_PATH:-~/.ssh/hetzner_ottobot}:/home/watchdog/.ssh/id_rsa:ro
+    depends_on:
+      - redis
+      - postgres
     networks:
+      - ottochain
       - monitoring
 
 networks:
+  ottochain:
+    external: true
   monitoring:
     external: true
