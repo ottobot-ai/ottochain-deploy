@@ -36,7 +36,7 @@ jobs:
           fi
           
           # Check all components have versions
-          for comp in ottochain sdk services explorer monitoring; do
+          for comp in ottochain sdk services explorer watchdog; do
             VERSION=$(yq ".components.$comp.version // \"\"" versions.yaml)
             if [ -z "$VERSION" ]; then
               echo "❌ Missing version for $comp"
