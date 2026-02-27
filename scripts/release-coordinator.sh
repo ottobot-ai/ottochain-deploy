@@ -16,7 +16,7 @@
 #   sdk         — TypeScript SDK (ottobot-ai/ottochain-sdk)
 #   services    — Backend services (ottobot-ai/ottochain-services)
 #   explorer    — Explorer UI (ottobot-ai/ottochain-explorer)
-#   monitoring  — Monitoring configs (ottobot-ai/ottochain-monitoring)
+#   monitoring  — Monitoring configs (monitoring/ subdirectory in this repo)
 #
 # Options:
 #   --dry-run      Validate and report without making changes
