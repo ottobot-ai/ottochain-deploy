@@ -141,29 +141,14 @@ jobs:
       - name: Distribute logging configuration
         run: |
           echo "=== Setting up file logging configuration ==="
-          # Create logback.xml on all nodes for file-based logging
+          # Distribute logback.xml to all nodes for file-based logging
           # Logs will be written to /ottochain/logs/ with automatic rotation
           
-          LOGBACK_CONFIG='<?xml version="1.0" encoding="UTF-8"?>
-          <configuration>
-              <include resource="logback-included.xml"/>
-              <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
-                  <encoder>
-                      <pattern>%d{HH:mm:ss.SSS} [%thread] %highlight(%-5level) %cyan(%logger{15}) - %msg%n</pattern>
-                  </encoder>
-              </appender>
-              <root level="INFO">
-                  <appender-ref ref="APP" />
-                  <appender-ref ref="APP_JSON" />
-                  <appender-ref ref="STDOUT" />
-              </root>
-              <logger name="io.constellationnetwork" level="DEBUG" />
-          </configuration>'
-          
           for host in node1 node2 node3; do
-            echo "$LOGBACK_CONFIG" | ssh $host "cat > /opt/ottochain/logback.xml"
-            echo "✓ Created logback.xml on $host"
+            scp config/logback.xml $host:/opt/ottochain/logback.xml
+            ssh $host "test -f /opt/ottochain/logback.xml" && echo "✓ logback.xml deployed to $host" || echo "ERROR: logback.xml missing on $host"
           done
+
 
       - name: Detect if genesis is needed
         id: genesis-check
@@ -259,7 +244,7 @@ jobs:
             -v /opt/ottochain/keys:/ottochain/keys:ro \
             -v /opt/ottochain/gl0-data:/ottochain/data \
             -v /opt/ottochain/gl0-logs:/ottochain/logs \
-            -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
+              -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
             -v /opt/ottochain/genesis:/ottochain/genesis:ro \
             -e LAYER=gl0 \
             -e IS_INITIAL=true \
@@ -304,7 +289,7 @@ jobs:
               -v /opt/ottochain/${KEYS}:/ottochain/keys:ro \
               -v /opt/ottochain/gl0-data:/ottochain/data \
               -v /opt/ottochain/gl0-logs:/ottochain/logs \
-            -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
+              -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
               -e LAYER=gl0 \
               -e CL_APP_ENV=dev \
               -e CL_EXTERNAL_IP=${IP} \
@@ -359,7 +344,7 @@ jobs:
             -v /opt/ottochain/keys:/ottochain/keys:ro \
             -v /opt/ottochain/gl1-data:/ottochain/data \
             -v /opt/ottochain/gl1-logs:/ottochain/logs \
-            -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
+              -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
             -e LAYER=gl1 \
             -e IS_INITIAL=true \
             -e CL_APP_ENV=dev \
@@ -396,7 +381,7 @@ jobs:
               -v /opt/ottochain/${KEYS}:/ottochain/keys:ro \
               -v /opt/ottochain/gl1-data:/ottochain/data \
               -v /opt/ottochain/gl1-logs:/ottochain/logs \
-            -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
+              -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
               -e LAYER=gl1 \
               -e CL_APP_ENV=dev \
               -e CL_EXTERNAL_IP=${IP} \
@@ -525,7 +510,7 @@ jobs:
             -v /opt/ottochain/keys:/ottochain/keys:ro \
             -v /opt/ottochain/ml0-data:/ottochain/data \
             -v /opt/ottochain/ml0-logs:/ottochain/logs \
-            -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
+              -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
             -v /opt/ottochain/genesis:/ottochain/genesis:ro \
             -e LAYER=ml0 \
             -e IS_INITIAL=true \
@@ -593,7 +578,7 @@ jobs:
               -v /opt/ottochain/${KEYS}:/ottochain/keys:ro \
               -v /opt/ottochain/ml0-data:/ottochain/data \
               -v /opt/ottochain/ml0-logs:/ottochain/logs \
-            -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
+              -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
               -e LAYER=ml0 \
               -e CL_KEYSTORE=/ottochain/keys/key.p12 \
               -e CL_KEYALIAS=alias \
@@ -660,7 +645,7 @@ jobs:
             -v /opt/ottochain/keys:/ottochain/keys:ro \
             -v /opt/ottochain/cl1-data:/ottochain/data \
             -v /opt/ottochain/cl1-logs:/ottochain/logs \
-            -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
+              -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
             -e LAYER=cl1 \
             -e IS_INITIAL=true \
             -e CL_KEYSTORE=/ottochain/keys/key.p12 \
@@ -709,7 +694,7 @@ jobs:
               -v /opt/ottochain/${KEYS}:/ottochain/keys:ro \
               -v /opt/ottochain/cl1-data:/ottochain/data \
               -v /opt/ottochain/cl1-logs:/ottochain/logs \
-            -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
+              -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
               -e LAYER=cl1 \
               -e CL_KEYSTORE=/ottochain/keys/key.p12 \
               -e CL_KEYALIAS=alias \
@@ -762,7 +747,7 @@ jobs:
             -v /opt/ottochain/keys:/ottochain/keys:ro \
             -v /opt/ottochain/dl1-data:/ottochain/data \
             -v /opt/ottochain/dl1-logs:/ottochain/logs \
-            -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
+              -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
             -e LAYER=dl1 \
             -e IS_INITIAL=true \
             -e CL_KEYSTORE=/ottochain/keys/key.p12 \
@@ -811,7 +796,7 @@ jobs:
               -v /opt/ottochain/${KEYS}:/ottochain/keys:ro \
               -v /opt/ottochain/dl1-data:/ottochain/data \
               -v /opt/ottochain/dl1-logs:/ottochain/logs \
-            -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
+              -v /opt/ottochain/logback.xml:/ottochain/logback.xml:ro \
               -e LAYER=dl1 \
               -e CL_KEYSTORE=/ottochain/keys/key.p12 \
               -e CL_KEYALIAS=alias \
