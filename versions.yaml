@@ -9,22 +9,22 @@
 #   3. version-bump.yml updates this file automatically
 #   4. Merge triggers deploy-on-merge.yml → deploys to scratch env
 
-# Last updated: 2026-02-23
-# Updated by: @think (SDK 1.0.1→1.0.3 to match Feb 23 release)
+# Last updated: 2026-02-27
+# Updated by: @main (metakit rc.9, tess rc.10, SDK 1.1.1)
 
 # === Component Versions ===
 components:
   # OttoChain metagraph (Scala) - builds JARs
   ottochain:
-    version: "0.7.7"
+    version: "0.7.9"
     repo: "scasplte2/ottochain"
   # Tessellation SDK version (external dependency)
   tessellation:
-    version: "4.0.0-rc.6"
+    version: "4.0.0-rc.10"
     repo: "Constellation-Labs/tessellation"
   # OttoChain SDK (TypeScript) - published to npmjs.com as @ottochain/sdk
   sdk:
-    version: "1.0.3"
+    version: "1.1.1"
     repo: "ottobot-ai/ottochain-sdk"
     package: "@ottochain/sdk"
     registry: "https://registry.npmjs.org"
@@ -38,15 +38,11 @@ components:
     version: "0.5.0"
     repo: "ottobot-ai/ottochain-explorer"
     image: "ghcr.io/ottobot-ai/ottochain-explorer"
-  # OttoChain Monitoring (configs/dashboards)
-  monitoring:
+  # OttoChain Watchdog (condition detection & auto-restart)
+  watchdog:
     version: "1.0.0"
-    repo: "ottobot-ai/ottochain-monitoring"
-  # OttoChain Health Monitor (fork detection & auto-restart)
-  health-monitor:
-    version: "1.0.0"
-    repo: "ottobot-ai/ottochain-monitoring"
-    image: "ghcr.io/ottobot-ai/ottochain-health-monitor"
+    repo: "ottobot-ai/ottochain-watchdog"
+    image: "ghcr.io/ottobot-ai/ottochain-watchdog"
 # === Monitoring Tool Versions ===
 monitoring_tools:
   prometheus: "v2.50.0"
