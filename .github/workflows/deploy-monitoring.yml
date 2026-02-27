@@ -202,12 +202,12 @@ jobs:
 
             - job_name: 'monitor'
               static_configs:
-                - targets: ['localhost:3032']
+                - targets: ['${SERVICES_IP}:3032']
               metrics_path: /metrics
 
             - job_name: 'node-services'
               static_configs:
-                - targets: ['localhost:9100']
+                - targets: ['${SERVICES_IP}:9100']
               relabel_configs:
                 - source_labels: [__address__]
                   target_label: instance
@@ -215,11 +215,11 @@ jobs:
 
             - job_name: 'postgres'
               static_configs:
-                - targets: ['localhost:9187']
+                - targets: ['${SERVICES_IP}:9187']
 
             - job_name: 'redis'
               static_configs:
-                - targets: ['localhost:9121']
+                - targets: ['${SERVICES_IP}:9121']
 
             - job_name: 'node-metagraph'
               static_configs:
@@ -231,7 +231,7 @@ jobs:
 
             - job_name: 'prometheus'
               static_configs:
-                - targets: ['localhost:9090']
+                - targets: ['prometheus:9090']
 
             - job_name: 'alertmanager'
               static_configs:
