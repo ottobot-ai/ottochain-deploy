@@ -107,7 +107,7 @@ jobs:
                 - GF_SECURITY_ADMIN_USER=admin
                 - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
                 - GF_USERS_ALLOW_SIGN_UP=false
-                - GF_ALERTING_ENABLED=true
+                - GF_ALERTING_ENABLED=false
                 - GF_UNIFIED_ALERTING_ENABLED=true
               volumes:
                 - grafana_data:/var/lib/grafana
@@ -400,6 +400,11 @@ jobs:
               options:
                 path: /etc/grafana/provisioning/dashboards
           DASH_EOF
+
+      - name: Copy Grafana dashboards
+        run: |
+          scp monitoring/grafana/provisioning/dashboards/*.json \
+            services:/opt/ottochain-monitoring/grafana/provisioning/dashboards/
 
       - name: Write Loki config
         run: |
