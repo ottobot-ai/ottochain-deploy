@@ -181,6 +181,9 @@ jobs:
     if: always()
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
       - name: Generate summary
         run: |
           echo "## 🚀 Full Stack Deployment Summary" >> $GITHUB_STEP_SUMMARY
@@ -195,7 +198,31 @@ jobs:
           echo "| Monitoring | ${{ needs.monitoring.result == 'success' && '✅' || needs.monitoring.result == 'skipped' && '⏭️' || '❌' }} ${{ needs.monitoring.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Compatibility | ${{ needs.compatibility.result == 'success' && '✅' || '⚠️' }} ${{ needs.compatibility.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Versions" >> $GITHUB_STEP_SUMMARY
-          echo "- **Metagraph**: ${{ inputs.metagraph_version || 'main' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Services**: ${{ inputs.services_version || 'latest' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Explorer**: ${{ inputs.explorer_version || 'latest' }}" >> $GITHUB_STEP_SUMMARY
+
+          echo "### Ecosystem Versions (from versions.yaml)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Version | Image |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|---------|-------|" >> $GITHUB_STEP_SUMMARY
+
+          if command -v yq &>/dev/null && [ -f versions.yaml ]; then
+            OTTO_VER=$(yq '.components.ottochain.version' versions.yaml)
+            TESS_VER=$(yq '.components.tessellation.version' versions.yaml)
+            SDK_VER=$(yq '.components.sdk.version' versions.yaml)
+            SVC_VER=$(yq '.components.services.version' versions.yaml)
+            SVC_IMG=$(yq '.components.services.image // ""' versions.yaml)
+            EXP_VER=$(yq '.components.explorer.version' versions.yaml)
+            EXP_IMG=$(yq '.components.explorer.image // ""' versions.yaml)
+            WDG_VER=$(yq '.components.watchdog.version' versions.yaml)
+            WDG_IMG=$(yq '.components.watchdog.image // ""' versions.yaml)
+
+            echo "| Metagraph | ${OTTO_VER} | \`ghcr.io/scasplte2/ottochain-metagraph:${OTTO_VER}\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| Tessellation SDK | ${TESS_VER} | — |" >> $GITHUB_STEP_SUMMARY
+            echo "| SDK (npm) | ${SDK_VER} | \`@ottochain/sdk@${SDK_VER}\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| Services | ${SVC_VER} | \`${SVC_IMG}:v${SVC_VER}\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| Explorer | ${EXP_VER} | \`${EXP_IMG}:v${EXP_VER}\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| Watchdog | ${WDG_VER} | \`${WDG_IMG}:latest\` |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Metagraph | ${{ inputs.metagraph_version || 'latest' }} | — |" >> $GITHUB_STEP_SUMMARY
+            echo "| Services | ${{ inputs.services_version || 'latest' }} | — |" >> $GITHUB_STEP_SUMMARY
+            echo "| Explorer | ${{ inputs.explorer_version || 'latest' }} | — |" >> $GITHUB_STEP_SUMMARY
+          fi
