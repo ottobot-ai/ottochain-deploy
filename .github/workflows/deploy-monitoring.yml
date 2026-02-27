@@ -80,7 +80,7 @@ jobs:
               depends_on:
                 - alertmanager
               networks:
-                - monitoring
+                - ottochain
 
             alertmanager:
               image: prom/alertmanager:v0.27.0
@@ -95,7 +95,7 @@ jobs:
                 - '--config.file=/etc/alertmanager/alertmanager.yml'
                 - '--storage.path=/alertmanager'
               networks:
-                - monitoring
+                - ottochain
 
             grafana:
               image: grafana/grafana:10.3.1
@@ -115,7 +115,7 @@ jobs:
               depends_on:
                 - prometheus
               networks:
-                - monitoring
+                - ottochain
 
             loki:
               image: grafana/loki:2.9.4
@@ -128,7 +128,7 @@ jobs:
                 - loki_data:/loki
               command: -config.file=/etc/loki/local-config.yaml
               networks:
-                - monitoring
+                - ottochain
 
             health-monitor:
               image: ghcr.io/ottobot-ai/ottochain-health-monitor:latest
@@ -143,7 +143,7 @@ jobs:
               volumes:
                 - /root/.ssh/hetzner_ottobot:/home/monitor/.ssh/id_rsa:ro
               networks:
-                - monitoring
+                - ottochain
 
           volumes:
             prometheus_data:
@@ -152,13 +152,16 @@ jobs:
             loki_data:
 
           networks:
-            monitoring:
-              driver: bridge
+            ottochain:
+              external: true
           COMPOSE_EOF
 
       - name: Write prometheus.yml
         run: |
           METAGRAPH_IP="${{ secrets.HETZNER_NODE1_IP }}"
+          NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
+          NODE2_IP="${{ secrets.HETZNER_NODE2_IP }}"
+          NODE3_IP="${{ secrets.HETZNER_NODE3_IP }}"
           SERVICES_IP="${{ secrets.HETZNER_SERVICES_IP }}"
 
           ssh services "cat > /opt/ottochain-monitoring/prometheus/prometheus.yml" << PROM_EOF
@@ -202,12 +205,12 @@ jobs:
 
             - job_name: 'monitor'
               static_configs:
-                - targets: ['localhost:3032']
+                - targets: ['monitor:3032']
               metrics_path: /metrics
 
             - job_name: 'node-services'
               static_configs:
-                - targets: ['localhost:9100']
+                - targets: ['node-exporter:9100']
               relabel_configs:
                 - source_labels: [__address__]
                   target_label: instance
@@ -215,23 +218,27 @@ jobs:
 
             - job_name: 'postgres'
               static_configs:
-                - targets: ['localhost:9187']
+                - targets: ['postgres-exporter:9187']
 
             - job_name: 'redis'
               static_configs:
-                - targets: ['localhost:9121']
+                - targets: ['redis-exporter:9121']
 
             - job_name: 'node-metagraph'
               static_configs:
-                - targets: ['${METAGRAPH_IP}:9100']
-              relabel_configs:
-                - source_labels: [__address__]
-                  target_label: instance
-                  replacement: 'metagraph'
+                - targets: ['${NODE1_IP}:9100']
+                  labels:
+                    node: 'node1'
+                - targets: ['${NODE2_IP}:9100']
+                  labels:
+                    node: 'node2'
+                - targets: ['${NODE3_IP}:9100']
+                  labels:
+                    node: 'node3'
 
             - job_name: 'prometheus'
               static_configs:
-                - targets: ['localhost:9090']
+                - targets: ['prometheus:9090']
 
             - job_name: 'alertmanager'
               static_configs:
@@ -510,6 +517,26 @@ jobs:
           
           monitor=$(ssh services "docker ps --filter name=health-monitor --format '{{.Status}}'" || echo "not running")
           echo "Health Monitor: $monitor"
+
+          # Smoke test: verify Prometheus can reach scrape targets
+          echo ""
+          echo "Prometheus scrape targets:"
+          ssh services "curl -sf http://localhost:9090/api/v1/targets" | \
+            python3 -c "
+          import sys,json
+          d=json.load(sys.stdin)
+          up=down=0
+          for t in d['data']['activeTargets']:
+              status = t['health']
+              job = t['labels']['job']
+              addr = t['discoveredLabels']['__address__']
+              icon = '✅' if status == 'up' else '❌'
+              print(f'  {icon} {job} ({addr}): {status}')
+              if status == 'up': up += 1
+              else: down += 1
+          print(f'  Total: {up} up, {down} down')
+          if down > 0: sys.exit(1)
+          " || echo "⚠️ Some Prometheus targets are down"
 
       - name: Summary
         run: |
