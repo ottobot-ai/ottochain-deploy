@@ -32,10 +32,10 @@ Tessellation JVM layers use off-heap memory (buffers, proto serialization, bloom
 ### Target Nodes
 
 All 4 Hetzner nodes:
-- `node1`: 5.78.90.207
-- `node2`: 5.78.113.25
-- `node3`: 5.78.107.77
-- `services`: 5.78.121.248
+- `node1`: 10.0.0.1
+- `node2`: 10.0.0.2
+- `node3`: 10.0.0.3
+- `services`: 10.0.0.4
 
 ### Swapfile Setup Procedure
 
@@ -118,7 +118,7 @@ Add to `ansible/roles/hetzner_node/tasks/swapfile.yml`:
 
 ### Monitoring Architecture
 
-The cluster monitor runs on `services` node (5.78.121.248). Add resource checks to the existing monitor cron/loop.
+The cluster monitor runs on `services` node (10.0.0.4). Add resource checks to the existing monitor cron/loop.
 
 ### Alert Thresholds
 

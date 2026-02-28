@@ -73,7 +73,7 @@ Severity: 🔴 CRITICAL
 Meaning:  GL0 on node1 has no peers — isolated (solo cluster / split-brain)
 Threshold: peerCount == 0 persisted for > 2 minutes
 Action:    Page James immediately — this is the current P0 scenario
-Check:     curl http://5.78.90.207:9000/cluster/info | jq '.peers | length'
+Check:     curl http://10.0.0.1:9000/cluster/info | jq '.peers | length'
 ```
 
 **Note:** A 2-node majority cluster (nodes 2+3) is valid with `peerCount=1` each. Only `peerCount=0` on any node indicates true isolation.
@@ -106,21 +106,21 @@ Action:    Notify James — CL1 down = no consensus layer
 
 ```bash
 # 1. Confirm node2/3 GL0 are alive and forming majority
-curl -s http://5.78.113.25:9000/cluster/info | jq '{state, peers: (.peers|length), ordinal}'
-curl -s http://5.78.107.77:9000/cluster/info | jq '{state, peers: (.peers|length), ordinal}'
+curl -s http://10.0.0.2:9000/cluster/info | jq '{state, peers: (.peers|length), ordinal}'
+curl -s http://10.0.0.3:9000/cluster/info | jq '{state, peers: (.peers|length), ordinal}'
 # Expected: state="Ready", peers=1 (each other), ordinal both ~same high number
 
 # 2. Confirm node1 GL0 is isolated
-curl -s http://5.78.90.207:9000/cluster/info | jq '{state, peers: (.peers|length), ordinal}'
+curl -s http://10.0.0.1:9000/cluster/info | jq '{state, peers: (.peers|length), ordinal}'
 # Expected: peers=0 (isolated), ordinal << node2/3 ordinal
 
 # 3. Check node1 available RAM (must have 12+ GB free for catch-up)
-ssh root@5.78.90.207 'free -h'
+ssh root@10.0.0.1 'free -h'
 # Expected: ~12 GB available
 
 # 4. Confirm seedlist env var is correctly configured (the root cause of split-brain)
-ssh root@5.78.90.207 'docker inspect ottochain-gl0 | jq ".[0].Config.Env" | grep -i seed'
-# Must see: CL_SEEDLIST_ADDRESSES=5.78.113.25,5.78.107.77 (or similar)
+ssh root@10.0.0.1 'docker inspect ottochain-gl0 | jq ".[0].Config.Env" | grep -i seed'
+# Must see: CL_SEEDLIST_ADDRESSES=10.0.0.2,10.0.0.3 (or similar)
 # If MISSING: that's why node1 formed solo cluster on restart
 ```
 
@@ -128,7 +128,7 @@ ssh root@5.78.90.207 'docker inspect ottochain-gl0 | jq ".[0].Config.Env" | grep
 
 ```bash
 # On node1 — restart GL0 with seedlist
-ssh root@5.78.90.207
+ssh root@10.0.0.1
 
 # Stop current isolated GL0
 docker stop ottochain-gl0
@@ -173,7 +173,7 @@ docker logs -f ottochain-gl0 | grep -E "Joining|Peer|ordinal|DownloadPerformed|R
 
 ```bash
 # All three should show peerCount=2 and matching ordinals
-for IP in 5.78.90.207 5.78.113.25 5.78.107.77; do
+for IP in 10.0.0.1 10.0.0.2 10.0.0.3; do
   echo "=== $IP ==="
   curl -s http://$IP:9000/cluster/info | jq '{state, peers: (.peers|length), ordinal}'
 done
@@ -191,14 +191,14 @@ CL1 is independently down on all 3 nodes. After GL0 stabilizes:
 
 ```bash
 # On each node (in order: node1, node2, node3)
-for IP in 5.78.90.207 5.78.113.25 5.78.107.77; do
+for IP in 10.0.0.1 10.0.0.2 10.0.0.3; do
   echo "Starting CL1 on $IP..."
   ssh root@$IP 'docker start ottochain-cl1'
   sleep 30  # Let it initialize before starting next node
 done
 
 # Verify CL1 cluster formed (all 3 should peer)
-for IP in 5.78.90.207 5.78.113.25 5.78.107.77; do
+for IP in 10.0.0.1 10.0.0.2 10.0.0.3; do
   echo "=== CL1 on $IP ==="
   curl -s http://$IP:9010/cluster/info | jq '{state, peers: (.peers|length)}' 2>/dev/null || echo "CL1 not responding"
 done
@@ -225,9 +225,9 @@ The split-brain was caused by node1 GL0 restarting **without seedlist addresses*
    ```yaml
    # docker-compose.yml (GL0 service)
    environment:
-     - CL_SEEDLIST_ADDRESSES=5.78.113.25,5.78.107.77  # node2, node3
+     - CL_SEEDLIST_ADDRESSES=10.0.0.2,10.0.0.3  # node2, node3
      # OR
-     - CL_L0_SEEDLIST=http://5.78.113.25:9000/cluster/info
+     - CL_L0_SEEDLIST=http://10.0.0.2:9000/cluster/info
    ```
 
 2. **Add seedlist check to monitoring** — alert if GL0 container is missing seedlist env var:
