@@ -152,6 +152,9 @@ git push
 
 ### Step 6: Verify scratch deployment
 
+> **Note:** `deployed.<environment>.*` in versions.yaml is auto-updated after successful deployment.
+> Check this section to verify what version is currently live without SSH-ing into the cluster.
+
 After the `versions.yaml` PR merges, verify:
 
 ```bash
