@@ -109,8 +109,12 @@ esac
 
 echo ""
 echo "============================================"
-echo "Setup complete!"
+echo "Setup complete! Running hardening..."
 echo "============================================"
+
+# Run hardening (swap, kernel tuning, Docker log rotation, node-exporter)
+"$SCRIPT_DIR/harden-node.sh" "$TARGET"
+
 echo ""
 echo "Next steps:"
 echo "  1. Ensure keystores exist at /opt/ottochain/keys/key.p12 on each node"
