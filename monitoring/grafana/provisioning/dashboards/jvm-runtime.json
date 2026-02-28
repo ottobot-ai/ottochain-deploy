@@ -798,7 +798,7 @@
     }
   ],
   "refresh": "30s",
-  "schemaVersion": 38,
+  "schemaVersion": 39,
   "tags": [
     "ottochain",
     "jvm",
@@ -877,8 +877,7 @@
       "10s",
       "30s",
       "1m",
-      "5m",
-      "off"
+      "5m"
     ]
   },
   "timezone": "browser",
