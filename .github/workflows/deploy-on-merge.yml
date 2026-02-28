@@ -5,10 +5,19 @@ on:
     branches: [main]
     paths:
       - 'versions.yaml'
+  # Also trigger on PR merge (push from github-actions[bot] doesn't trigger
+  # workflows via the push event due to GitHub's anti-recursion policy)
+  pull_request:
+    branches: [main]
+    types: [closed]
+    paths:
+      - 'versions.yaml'
 
 jobs:
   check-auto-deploy:
     name: Check Auto-Deploy Settings
+    # Skip if PR was closed without merging
+    if: github.event_name == 'push' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     outputs:
       should_deploy: ${{ steps.check.outputs.should_deploy }}
