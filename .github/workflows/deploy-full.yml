@@ -1,12 +1,6 @@
 name: Deploy Full Stack
 
 on:
-  push:
-    branches:
-      - release/scratch
-      - release/beta
-      - release/staging
-      - release/prod
   workflow_dispatch:
     inputs:
       environment:
@@ -25,19 +19,19 @@ on:
         default: 'false'
         type: boolean
       metagraph_version:
-        description: 'Metagraph image tag (e.g., latest, v0.6.0, sha)'
+        description: 'Metagraph version (blank = versions.yaml)'
         required: false
-        default: 'latest'
+        default: ''
         type: string
       services_version:
-        description: 'Services image version'
+        description: 'Services version (blank = versions.yaml)'
         required: false
-        default: 'latest'
+        default: ''
         type: string
       explorer_version:
-        description: 'Explorer image version'
+        description: 'Explorer version (blank = versions.yaml)'
         required: false
-        default: 'latest'
+        default: ''
         type: string
       skip_metagraph:
         description: 'Skip metagraph deployment'
@@ -61,24 +55,63 @@ on:
         type: boolean
 
 jobs:
-  # Determine environment from branch or input
+  # Resolve versions from versions.yaml or inputs
   setup:
     name: Setup
     runs-on: ubuntu-latest
     outputs:
       environment: ${{ steps.env.outputs.environment }}
+      metagraph_version: ${{ steps.versions.outputs.metagraph }}
+      services_version: ${{ steps.versions.outputs.services }}
+      explorer_version: ${{ steps.versions.outputs.explorer }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
       - name: Determine environment
         id: env
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            ENV="${{ github.ref_name }}"
-            ENV="${ENV#release/}"
-          else
-            ENV="${{ inputs.environment }}"
-          fi
+          ENV="${{ inputs.environment }}"
           echo "environment=$ENV" >> $GITHUB_OUTPUT
           echo "Deploying to: $ENV"
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Resolve versions
+        id: versions
+        run: |
+          INPUT_METAGRAPH="${{ inputs.metagraph_version }}"
+          INPUT_SERVICES="${{ inputs.services_version }}"
+          INPUT_EXPLORER="${{ inputs.explorer_version }}"
+
+          # Read from versions.yaml
+          YAML_METAGRAPH=$(yq '.components.ottochain.version' versions.yaml)
+          YAML_SERVICES="v$(yq '.components.services.version' versions.yaml)"
+          YAML_EXPLORER="v$(yq '.components.explorer.version' versions.yaml)"
+
+          # Use input if provided, otherwise versions.yaml
+          METAGRAPH="${INPUT_METAGRAPH:-$YAML_METAGRAPH}"
+          SERVICES="${INPUT_SERVICES:-$YAML_SERVICES}"
+          EXPLORER="${INPUT_EXPLORER:-$YAML_EXPLORER}"
+
+          # Treat "latest" as versions.yaml too
+          [ "$METAGRAPH" = "latest" ] && METAGRAPH="$YAML_METAGRAPH"
+          [ "$SERVICES" = "latest" ] && SERVICES="$YAML_SERVICES"
+          [ "$EXPLORER" = "latest" ] && EXPLORER="$YAML_EXPLORER"
+
+          echo "metagraph=$METAGRAPH" >> $GITHUB_OUTPUT
+          echo "services=$SERVICES" >> $GITHUB_OUTPUT
+          echo "explorer=$EXPLORER" >> $GITHUB_OUTPUT
+
+          echo "### Resolved Versions" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Input | Resolved |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Metagraph | \`${INPUT_METAGRAPH:-<blank>}\` | \`$METAGRAPH\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Services | \`${INPUT_SERVICES:-<blank>}\` | \`$SERVICES\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Explorer | \`${INPUT_EXPLORER:-<blank>}\` | \`$EXPLORER\` |" >> $GITHUB_STEP_SUMMARY
 
   # Deploy metagraph (5-layer cluster)
   metagraph:
@@ -89,7 +122,7 @@ jobs:
     with:
       environment: ${{ needs.setup.outputs.environment }}
       wipe_state: ${{ inputs.wipe_state == true }}
-      image_tag: ${{ inputs.metagraph_version || 'latest' }}
+      image_tag: ${{ needs.setup.outputs.metagraph_version }}
       enable_gl1: ${{ inputs.enable_gl1 == true }}
     secrets: inherit
 
@@ -101,8 +134,8 @@ jobs:
     uses: ./.github/workflows/deploy-services.yml
     with:
       environment: ${{ needs.setup.outputs.environment }}
-      services_version: ${{ inputs.services_version || 'latest' }}
-      explorer_version: ${{ inputs.explorer_version || 'latest' }}
+      services_version: ${{ needs.setup.outputs.services_version }}
+      explorer_version: ${{ needs.setup.outputs.explorer_version }}
       reset_db: ${{ inputs.wipe_state == true }}
     secrets: inherit
 
@@ -117,72 +150,83 @@ jobs:
       include_exporters: true
     secrets: inherit
 
-  # Update compatibility matrix
-  compatibility:
-    name: Update Compatibility
+  # Update deployed state on main via PR-safe method
+  update-state:
+    name: Update Deployed State
     runs-on: ubuntu-latest
     needs: [setup, metagraph, services, monitoring]
     if: always() && (needs.metagraph.result == 'success' || needs.services.result == 'success')
     permissions:
       contents: write
-    
-    steps:
-      - name: Compute target branch
-        id: target
-        run: |
-          ENV="${{ needs.setup.outputs.environment }}"
-          BRANCH="release/${ENV}"
-          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
-          echo "env=$ENV" >> "$GITHUB_OUTPUT"
 
-      - name: Checkout target branch
+    steps:
+      - name: Checkout main
         uses: actions/checkout@v6
         with:
-          ref: ${{ steps.target.outputs.branch }}
-          token: ${{ secrets.RELEASE_TOKEN }}
+          ref: main
 
       - name: Install yq
         run: |
           sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
           sudo chmod +x /usr/local/bin/yq
 
-      - name: Generate compatibility matrix
-        run: |
-          chmod +x scripts/generate-compatibility.sh
-          ./scripts/generate-compatibility.sh
-
       - name: Update deployed versions
         env:
-          TARGET_ENV: ${{ steps.target.outputs.env }}
+          TARGET_ENV: ${{ needs.setup.outputs.environment }}
         run: |
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          yq -i ".deployed.${TARGET_ENV}.ottochain = .components.ottochain.version" versions.yaml
-          yq -i ".deployed.${TARGET_ENV}.services = .components.services.version" versions.yaml
-          yq -i ".deployed.${TARGET_ENV}.explorer = .components.explorer.version" versions.yaml
+          yq -i ".deployed.${TARGET_ENV}.ottochain = \"${{ needs.setup.outputs.metagraph_version }}\"" versions.yaml
+          yq -i ".deployed.${TARGET_ENV}.services = \"${{ needs.setup.outputs.services_version }}\"" versions.yaml
+          yq -i ".deployed.${TARGET_ENV}.explorer = \"${{ needs.setup.outputs.explorer_version }}\"" versions.yaml
           yq -i ".deployed.${TARGET_ENV}.timestamp = \"$TIMESTAMP\"" versions.yaml
           yq -i ".deployed.${TARGET_ENV}.workflow_run = \"${{ github.run_id }}\"" versions.yaml
 
-      - name: Commit changes
+          echo "Updated deployed.$TARGET_ENV:"
+          yq ".deployed.${TARGET_ENV}" versions.yaml
+
+      - name: Create PR with deployed state
         env:
-          TARGET_BRANCH: ${{ steps.target.outputs.branch }}
-          TARGET_ENV: ${{ steps.target.outputs.env }}
+          TARGET_ENV: ${{ needs.setup.outputs.environment }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add COMPATIBILITY.md versions.yaml
-          git diff --staged --quiet || git commit -m "chore: update ${TARGET_ENV} compatibility matrix [skip ci]"
-          git push origin "${TARGET_BRANCH}"
+          git add versions.yaml
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          BRANCH="deploy-state/${TARGET_ENV}-${{ github.run_id }}"
+          git checkout -b "$BRANCH"
+          git commit -m "chore: update deployed.${TARGET_ENV} state [skip ci]"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore: update deployed.${TARGET_ENV} state" \
+            --body "Auto-generated by [Deploy Full Stack run #${{ github.run_id }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+
+          **Deployed versions (${TARGET_ENV}):**
+          - Metagraph: \`${{ needs.setup.outputs.metagraph_version }}\`
+          - Services: \`${{ needs.setup.outputs.services_version }}\`
+          - Explorer: \`${{ needs.setup.outputs.explorer_version }}\`"
 
   # Final summary
   summary:
     name: Summary
     runs-on: ubuntu-latest
-    needs: [setup, metagraph, services, monitoring, compatibility]
+    needs: [setup, metagraph, services, monitoring, update-state]
     if: always()
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
 
       - name: Generate summary
         run: |
@@ -191,38 +235,17 @@ jobs:
           echo "**Environment**: ${{ needs.setup.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
           echo "**Wipe State**: ${{ inputs.wipe_state }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Metagraph | ${{ needs.metagraph.result == 'success' && '✅' || needs.metagraph.result == 'skipped' && '⏭️' || '❌' }} ${{ needs.metagraph.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Services | ${{ needs.services.result == 'success' && '✅' || needs.services.result == 'skipped' && '⏭️' || '❌' }} ${{ needs.services.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Monitoring | ${{ needs.monitoring.result == 'success' && '✅' || needs.monitoring.result == 'skipped' && '⏭️' || '❌' }} ${{ needs.monitoring.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Compatibility | ${{ needs.compatibility.result == 'success' && '✅' || '⚠️' }} ${{ needs.compatibility.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Version | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|---------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Metagraph | \`${{ needs.setup.outputs.metagraph_version }}\` | ${{ needs.metagraph.result == 'success' && '✅' || needs.metagraph.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Services | \`${{ needs.setup.outputs.services_version }}\` | ${{ needs.services.result == 'success' && '✅' || needs.services.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Monitoring | — | ${{ needs.monitoring.result == 'success' && '✅' || needs.monitoring.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| State Update | — | ${{ needs.update-state.result == 'success' && '✅' || '⚠️' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          echo "### Ecosystem Versions (from versions.yaml)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Component | Version | Image |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----------|---------|-------|" >> $GITHUB_STEP_SUMMARY
-
-          if command -v yq &>/dev/null && [ -f versions.yaml ]; then
-            OTTO_VER=$(yq '.components.ottochain.version' versions.yaml)
-            TESS_VER=$(yq '.components.tessellation.version' versions.yaml)
-            SDK_VER=$(yq '.components.sdk.version' versions.yaml)
-            SVC_VER=$(yq '.components.services.version' versions.yaml)
-            SVC_IMG=$(yq '.components.services.image // ""' versions.yaml)
-            EXP_VER=$(yq '.components.explorer.version' versions.yaml)
-            EXP_IMG=$(yq '.components.explorer.image // ""' versions.yaml)
-            WDG_VER=$(yq '.components.watchdog.version' versions.yaml)
-            WDG_IMG=$(yq '.components.watchdog.image // ""' versions.yaml)
-
-            echo "| Metagraph | ${OTTO_VER} | \`ghcr.io/scasplte2/ottochain-metagraph:${OTTO_VER}\` |" >> $GITHUB_STEP_SUMMARY
-            echo "| Tessellation SDK | ${TESS_VER} | — |" >> $GITHUB_STEP_SUMMARY
-            echo "| SDK (npm) | ${SDK_VER} | \`@ottochain/sdk@${SDK_VER}\` |" >> $GITHUB_STEP_SUMMARY
-            echo "| Services | ${SVC_VER} | \`${SVC_IMG}:v${SVC_VER}\` |" >> $GITHUB_STEP_SUMMARY
-            echo "| Explorer | ${EXP_VER} | \`${EXP_IMG}:v${EXP_VER}\` |" >> $GITHUB_STEP_SUMMARY
-            echo "| Watchdog | ${WDG_VER} | \`${WDG_IMG}:latest\` |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "| Metagraph | ${{ inputs.metagraph_version || 'latest' }} | — |" >> $GITHUB_STEP_SUMMARY
-            echo "| Services | ${{ inputs.services_version || 'latest' }} | — |" >> $GITHUB_STEP_SUMMARY
-            echo "| Explorer | ${{ inputs.explorer_version || 'latest' }} | — |" >> $GITHUB_STEP_SUMMARY
+          if [ -f versions.yaml ]; then
+            echo "### Full Ecosystem Versions (versions.yaml)" >> $GITHUB_STEP_SUMMARY
+            echo '```yaml' >> $GITHUB_STEP_SUMMARY
+            yq '.components' versions.yaml >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
           fi
