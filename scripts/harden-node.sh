@@ -109,15 +109,19 @@ if docker ps --format '{{.Names}}' | grep -q node-exporter; then
     echo "Node exporter already running"
 else
     echo "Starting node exporter..."
-    docker run -d --name node-exporter \
+    if docker run -d --name node-exporter \
         --restart=unless-stopped \
         --net=host \
         --pid=host \
         -v /:/host:ro,rslave \
         prom/node-exporter:latest \
-        --path.rootfs=/host 2>/dev/null || \
-    docker start node-exporter 2>/dev/null || \
-    echo "Node exporter container exists, may need manual check"
+        --path.rootfs=/host 2>&1; then
+        echo "Node exporter started"
+    elif docker start node-exporter 2>&1; then
+        echo "Node exporter restarted"
+    else
+        echo "WARNING: Failed to start node exporter — check manually"
+    fi
 fi
 
 echo ""
@@ -136,12 +140,24 @@ HARDEN_SCRIPT
 TARGET="${1:-}"
 [[ -z "$TARGET" ]] && usage
 
+require_ip() {
+    local name=$1 val=$2
+    if [[ -z "$val" ]]; then
+        echo "Error: ${name} not set. Source inventory.sh or export it." >&2
+        exit 1
+    fi
+}
+
 case "$TARGET" in
-    1)       harden_node "node1" "${NODE1_IP}" "$SWAP_SIZE" ;;
-    2)       harden_node "node2" "${NODE2_IP}" "$SWAP_SIZE" ;;
-    3)       harden_node "node3" "${NODE3_IP}" "$SWAP_SIZE" ;;
-    services) harden_node "services" "${SERVICES_IP}" "4G" ;;
+    1)       require_ip NODE1_IP "$NODE1_IP"; harden_node "node1" "${NODE1_IP}" "$SWAP_SIZE" ;;
+    2)       require_ip NODE2_IP "$NODE2_IP"; harden_node "node2" "${NODE2_IP}" "$SWAP_SIZE" ;;
+    3)       require_ip NODE3_IP "$NODE3_IP"; harden_node "node3" "${NODE3_IP}" "$SWAP_SIZE" ;;
+    services) require_ip SERVICES_IP "$SERVICES_IP"; harden_node "services" "${SERVICES_IP}" "4G" ;;
     all)
+        require_ip NODE1_IP "$NODE1_IP"
+        require_ip NODE2_IP "$NODE2_IP"
+        require_ip NODE3_IP "$NODE3_IP"
+        require_ip SERVICES_IP "$SERVICES_IP"
         harden_node "node1" "${NODE1_IP}" "$SWAP_SIZE"
         harden_node "node2" "${NODE2_IP}" "$SWAP_SIZE"
         harden_node "node3" "${NODE3_IP}" "$SWAP_SIZE"
