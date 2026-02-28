@@ -433,6 +433,30 @@ jobs:
           NGINX_CONF
           
           ln -sf /etc/nginx/sites-available/ottochain /etc/nginx/sites-enabled/ottochain
+
+          # Update status.ottochain.ai to proxy dynamic routes to monitor
+          if [ -f /etc/nginx/sites-enabled/status.ottochain.ai ]; then
+            # Add /traffic, /rejections, /ws proxy if not already present
+            if ! grep -q '/traffic' /etc/nginx/sites-enabled/status.ottochain.ai; then
+              sed -i '/location \/api\//i\
+              location /traffic {\
+                  proxy_pass http://127.0.0.1:3032/traffic;\
+                  proxy_set_header Host $host;\
+              }\
+              location /rejections {\
+                  proxy_pass http://127.0.0.1:3032/rejections;\
+                  proxy_set_header Host $host;\
+              }\
+              location /ws {\
+                  proxy_pass http://127.0.0.1:3032/ws;\
+                  proxy_http_version 1.1;\
+                  proxy_set_header Upgrade $http_upgrade;\
+                  proxy_set_header Connection "upgrade";\
+                  proxy_set_header Host $host;\
+              }' /etc/nginx/sites-enabled/status.ottochain.ai
+            fi
+          fi
+
           nginx -t && nginx -s reload
           NGINX_SCRIPT
 
