@@ -183,6 +183,8 @@ jobs:
                 - DATABASE_URL=${DATABASE_URL}
                 - METAGRAPH_ID=${METAGRAPH_ID}
                 - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+                - TRAFFIC_GEN_URL=http://traffic-gen:3033
+                - INDEXER_URL=http://indexer:3031
               depends_on:
                 - redis
               networks:
