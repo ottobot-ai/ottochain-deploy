@@ -7,10 +7,10 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
-    "vitest": "^1.2.0",
-    "@types/node": "^20.11.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^25.3.3",
     "js-yaml": "^4.1.0",
-    "@types/js-yaml": "^4.0.9"
+    "vitest": "^4.0.18"
   },
   "type": "module"
 }
