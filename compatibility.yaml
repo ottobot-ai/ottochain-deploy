@@ -45,7 +45,7 @@ components:
     description: "Monitoring stack (Grafana dashboards, alerts)"
     type: tooling
     artifacts:
-      - github.com/ottobot-ai/ottochain-monitoring
+      - github.com/ottobot-ai/ottochain-watchdog
     requires: {}  # Standalone, no strict dependencies
 
 # Compatibility rules are semver ranges

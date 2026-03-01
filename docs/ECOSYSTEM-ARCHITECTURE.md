@@ -28,7 +28,7 @@
 │  ottochain-sdk        ← TypeScript client library               │
 │  ottochain-services   ← Bridge, indexer, API                    │
 │  ottochain-explorer   ← Web UI                                  │
-│  ottochain-monitoring ← Grafana, Prometheus, alerts             │
+│  ottochain-watchdog ← Grafana, Prometheus, alerts             │
 │  ottochain-deploy     ← Deployment orchestration (this repo)    │
 │    branches: main, develop                                      │
 └─────────────────────────────────────────────────────────────────┘
@@ -133,7 +133,7 @@ sources:
     
   monitoring:
     type: ecosystem
-    repo: ottobot-ai/ottochain-monitoring
+    repo: ottobot-ai/ottochain-watchdog
     ref: develop
 
 infrastructure:

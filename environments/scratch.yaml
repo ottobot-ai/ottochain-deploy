@@ -42,7 +42,7 @@ sources:
     
   monitoring:
     type: ecosystem
-    repo: ottobot-ai/ottochain-monitoring
+    repo: ottobot-ai/ottochain-watchdog
     ref: develop
 
 # Infrastructure loaded from secret at runtime
