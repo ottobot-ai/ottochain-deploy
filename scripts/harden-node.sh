@@ -36,6 +36,73 @@ harden_node() {
     ssh $SSH_OPTS root@$node_ip << HARDEN_SCRIPT
 set -e
 
+echo "=== SSH hardening ==="
+SSHD_CONFIG=/etc/ssh/sshd_config
+SSHD_CHANGED=false
+
+# Disable password auth (key-only)
+if grep -q '^PasswordAuthentication yes' \$SSHD_CONFIG 2>/dev/null; then
+    sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' \$SSHD_CONFIG
+    SSHD_CHANGED=true
+elif ! grep -q '^PasswordAuthentication' \$SSHD_CONFIG; then
+    echo 'PasswordAuthentication no' >> \$SSHD_CONFIG
+    SSHD_CHANGED=true
+fi
+
+# Disable root password login (keep key auth)
+if grep -q '^PermitRootLogin yes' \$SSHD_CONFIG 2>/dev/null; then
+    sed -i 's/^PermitRootLogin yes/PermitRootLogin prohibit-password/' \$SSHD_CONFIG
+    SSHD_CHANGED=true
+elif ! grep -q '^PermitRootLogin' \$SSHD_CONFIG; then
+    echo 'PermitRootLogin prohibit-password' >> \$SSHD_CONFIG
+    SSHD_CHANGED=true
+fi
+
+# Reduce max auth tries
+if ! grep -q '^MaxAuthTries' \$SSHD_CONFIG; then
+    echo 'MaxAuthTries 3' >> \$SSHD_CONFIG
+    SSHD_CHANGED=true
+fi
+
+if [ "\$SSHD_CHANGED" = "true" ]; then
+    systemctl reload sshd
+    echo "SSH hardened: password auth disabled, root login key-only, max 3 auth tries"
+else
+    echo "SSH already hardened"
+fi
+
+echo ""
+echo "=== fail2ban ==="
+if ! command -v fail2ban-server &> /dev/null; then
+    apt-get update -qq
+    apt-get install -y -qq fail2ban
+fi
+
+# Configure jail
+cat > /etc/fail2ban/jail.local << 'F2B'
+[DEFAULT]
+bantime = 3600
+findtime = 600
+maxretry = 5
+
+[sshd]
+enabled = true
+port = ssh
+filter = sshd
+logpath = /var/log/auth.log
+maxretry = 3
+bantime = 86400
+F2B
+
+systemctl enable fail2ban
+systemctl restart fail2ban
+echo "fail2ban active: \$(fail2ban-client status sshd 2>/dev/null | grep 'Currently banned' || echo 'starting...')"
+
+echo ""
+echo "=== Firewall ==="
+echo "Firewall managed by Hetzner Cloud Firewall (not UFW)"
+echo "Configure at: https://console.hetzner.cloud → Firewalls"
+echo ""
 echo "=== Swap setup ==="
 if swapon --show | grep -q /swapfile; then
     echo "Swap already active: \$(swapon --show)"
@@ -131,6 +198,8 @@ echo "RAM:        \$(free -h | grep Mem | awk '{print \$2}')"
 echo "Swappiness: \$(cat /proc/sys/vm/swappiness)"
 echo "Docker:     \$(docker --version 2>/dev/null || echo 'not found')"
 echo "Exporter:   \$(docker ps --filter name=node-exporter --format '{{.Status}}' 2>/dev/null || echo 'not running')"
+echo "fail2ban: \$(systemctl is-active fail2ban 2>/dev/null || echo 'not running')"
+echo "SSH:      PasswordAuth=\$(grep '^PasswordAuthentication' /etc/ssh/sshd_config 2>/dev/null || echo 'default')"
 echo ""
 echo "✓ Hardening complete for $label"
 HARDEN_SCRIPT
