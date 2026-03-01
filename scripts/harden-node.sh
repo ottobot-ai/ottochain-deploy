@@ -99,53 +99,9 @@ systemctl restart fail2ban
 echo "fail2ban active: \$(fail2ban-client status sshd 2>/dev/null | grep 'Currently banned' || echo 'starting...')"
 
 echo ""
-echo "=== UFW firewall ==="
-if ! command -v ufw &> /dev/null; then
-    apt-get install -y -qq ufw
-fi
-
-# Only configure if UFW is inactive (don't overwrite existing rules)
-if ufw status | grep -q "inactive"; then
-    ufw default deny incoming
-    ufw default allow outgoing
-
-    # SSH (always)
-    ufw allow 22/tcp
-
-    if [ "$label" = "services" ]; then
-        # Services node ports
-        ufw allow 3030/tcp   # Bridge
-        ufw allow 3031/tcp   # Indexer
-        ufw allow 4000/tcp   # Gateway
-        ufw allow 8080/tcp   # Explorer
-        ufw allow 9090/tcp   # Prometheus
-        ufw allow 3000/tcp   # Grafana
-        ufw allow 9100/tcp   # Node exporter
-        ufw allow 9093/tcp   # Alertmanager
-        echo "UFW enabled with services node rules"
-    else
-        # Metagraph node ports — Tessellation public API
-        ufw allow 9000/tcp   # GL0
-        ufw allow 9100/tcp   # GL1
-        ufw allow 9200/tcp   # ML0
-        ufw allow 9300/tcp   # CL1
-        ufw allow 9400/tcp   # DL1
-
-        # Tessellation P2P ports
-        ufw allow 9001/tcp   # GL0 P2P
-        ufw allow 9101/tcp   # GL1 P2P
-        ufw allow 9201/tcp   # ML0 P2P
-        ufw allow 9301/tcp   # CL1 P2P
-        ufw allow 9401/tcp   # DL1 P2P
-        echo "UFW enabled with tessellation + SSH rules"
-    fi
-
-    # Enable (--force to skip interactive prompt)
-    ufw --force enable
-else
-    echo "UFW already active, not modifying rules"
-fi
-
+echo "=== Firewall ==="
+echo "Firewall managed by Hetzner Cloud Firewall (not UFW)"
+echo "Configure at: https://console.hetzner.cloud → Firewalls"
 echo ""
 echo "=== Swap setup ==="
 if swapon --show | grep -q /swapfile; then
@@ -243,7 +199,6 @@ echo "Swappiness: \$(cat /proc/sys/vm/swappiness)"
 echo "Docker:     \$(docker --version 2>/dev/null || echo 'not found')"
 echo "Exporter:   \$(docker ps --filter name=node-exporter --format '{{.Status}}' 2>/dev/null || echo 'not running')"
 echo "fail2ban: \$(systemctl is-active fail2ban 2>/dev/null || echo 'not running')"
-echo "UFW:      \$(ufw status | head -1)"
 echo "SSH:      PasswordAuth=\$(grep '^PasswordAuthentication' /etc/ssh/sshd_config 2>/dev/null || echo 'default')"
 echo ""
 echo "✓ Hardening complete for $label"
