@@ -12,7 +12,7 @@
 | OttoChain SDK | `1.0.3` | [ottobot-ai/ottochain-sdk](https://github.com/ottobot-ai/ottochain-sdk) • [npm](https://www.npmjs.com/package/@ottochain/sdk) |
 | OttoChain Services | `0.4.1` | [ottobot-ai/ottochain-services](https://github.com/ottobot-ai/ottochain-services) |
 | OttoChain Explorer | `0.5.0` | [ottobot-ai/ottochain-explorer](https://github.com/ottobot-ai/ottochain-explorer) |
-| OttoChain Monitoring | `0.1.0` | [ottobot-ai/ottochain-monitoring](https://github.com/ottobot-ai/ottochain-monitoring) |
+| OttoChain Monitoring | `0.1.0` | [ottobot-ai/ottochain-watchdog](https://github.com/ottobot-ai/ottochain-watchdog) |
 | Tessellation | `4.0.0-rc.2` | [Constellation-Labs/tessellation](https://github.com/Constellation-Labs/tessellation) |
 
 ## Docker Images

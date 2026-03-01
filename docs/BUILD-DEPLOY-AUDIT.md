@@ -56,7 +56,7 @@ The ecosystem has a solid Docker-based deploy system with version management via
 │  • ottochain-services  → release.yml → Docker + dispatch            │
 │  • ottochain-explorer  → release.yml → Docker + dispatch            │
 │  • ottochain-sdk       → release.yml → npm publish + dispatch       │
-│  • ottochain-monitoring → release.yml → dispatch                    │
+│  • ottochain-watchdog → release.yml → dispatch                    │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -97,7 +97,7 @@ The ecosystem has a solid Docker-based deploy system with version management via
 | `ottobot-ai/ottochain-services` | Bridge/Indexer | Docker image | ✅ `v0.2.0` |
 | `ottobot-ai/ottochain-explorer` | Web UI | Docker image | ✅ `v0.1.0` |
 | `ottobot-ai/ottochain-deploy` | Deploy configs | Workflows | Pure Docker (PR #21) |
-| `ottobot-ai/ottochain-monitoring` | Monitoring stack | Prometheus/Grafana configs | Deployed via `deploy-monitoring.yml` |
+| `ottobot-ai/ottochain-watchdog` | Monitoring stack | Prometheus/Grafana configs | Deployed via `deploy-monitoring.yml` |
 
 ### Docker-First Architecture (NEW)
 
@@ -137,7 +137,7 @@ components:
 
 ### Monitoring Stack
 
-**Repository**: `ottobot-ai/ottochain-monitoring`
+**Repository**: `ottobot-ai/ottochain-watchdog`
 
 **Components** (from `versions.yml`):
 | Component | Version | Purpose |
@@ -152,7 +152,7 @@ components:
 | redis_exporter | v1.56.0 | Redis metrics |
 
 **Deployment**:
-1. `deploy-monitoring.yml` clones `ottochain-monitoring` repo
+1. `deploy-monitoring.yml` clones `ottochain-watchdog` repo
 2. Generates `prometheus/targets.yml` with cluster node IPs
 3. Deploys Docker compose stack to services node
 4. Optionally deploys node-exporter to metagraph nodes (`include_exporters` flag)
