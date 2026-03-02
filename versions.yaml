@@ -40,7 +40,7 @@ components:
     image: "ghcr.io/ottobot-ai/ottochain-explorer"
   # OttoChain Watchdog (condition detection & auto-restart)
   watchdog:
-    version: "1.0.0"
+    version: "1.2.0"
     repo: "ottobot-ai/ottochain-watchdog"
     image: "ghcr.io/ottobot-ai/ottochain-watchdog"
 # === Monitoring Tool Versions ===
