@@ -106,7 +106,40 @@ jobs:
           echo "services=$SERVICES" >> $GITHUB_OUTPUT
           echo "explorer=$EXPLORER" >> $GITHUB_OUTPUT
 
-          echo "### Resolved Versions" >> $GITHUB_STEP_SUMMARY
+          # Read all versions for the summary
+          YAML_SDK=$(yq '.components.sdk.version' versions.yaml)
+          YAML_WATCHDOG=$(yq '.components.watchdog.version' versions.yaml)
+          YAML_TESS=$(yq '.components.tessellation.version' versions.yaml)
+          YAML_POSTGRES=$(yq '.infra.postgres' versions.yaml)
+          YAML_REDIS=$(yq '.infra.redis' versions.yaml)
+          YAML_JAVA=$(yq '.infra.java' versions.yaml)
+          YAML_PROMETHEUS=$(yq '.monitoring_tools.prometheus' versions.yaml)
+          YAML_GRAFANA=$(yq '.monitoring_tools.grafana' versions.yaml)
+          YAML_LOKI=$(yq '.monitoring_tools.loki' versions.yaml)
+
+          echo "### Deploying Versions" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Core Stack" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Version | Image / Artifact |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|---------|-----------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| OttoChain (metagraph) | \`$METAGRAPH\` | \`ghcr.io/scasplte2/ottochain-metagraph:$METAGRAPH\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tessellation | \`$YAML_TESS\` | Constellation Labs |" >> $GITHUB_STEP_SUMMARY
+          echo "| Services (bridge/indexer/gateway) | \`$SERVICES\` | \`ghcr.io/ottobot-ai/ottochain-services:$SERVICES\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Explorer | \`$EXPLORER\` | \`ghcr.io/ottobot-ai/ottochain-explorer:$EXPLORER\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| SDK | \`$YAML_SDK\` | \`@ottochain/sdk@$YAML_SDK\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Watchdog | \`$YAML_WATCHDOG\` | \`ghcr.io/ottobot-ai/ottochain-watchdog:latest\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Infrastructure" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Version |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|---------|" >> $GITHUB_STEP_SUMMARY
+          echo "| PostgreSQL | \`$YAML_POSTGRES\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Redis | \`$YAML_REDIS\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Java | \`$YAML_JAVA\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Prometheus | \`$YAML_PROMETHEUS\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Grafana | \`$YAML_GRAFANA\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Loki | \`$YAML_LOKI\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Input Override" >> $GITHUB_STEP_SUMMARY
           echo "| Component | Input | Resolved |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|-------|----------|" >> $GITHUB_STEP_SUMMARY
           echo "| Metagraph | \`${INPUT_METAGRAPH:-<blank>}\` | \`$METAGRAPH\` |" >> $GITHUB_STEP_SUMMARY
@@ -239,13 +272,23 @@ jobs:
           echo "|-----------|---------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Metagraph | \`${{ needs.setup.outputs.metagraph_version }}\` | ${{ needs.metagraph.result == 'success' && '✅' || needs.metagraph.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Services | \`${{ needs.setup.outputs.services_version }}\` | ${{ needs.services.result == 'success' && '✅' || needs.services.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Monitoring | — | ${{ needs.monitoring.result == 'success' && '✅' || needs.monitoring.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Watchdog | \`$(yq '.components.watchdog.version' versions.yaml)\` | ${{ needs.monitoring.result == 'success' && '✅' || needs.monitoring.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| State Update | — | ${{ needs.update-state.result == 'success' && '✅' || '⚠️' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ -f versions.yaml ]; then
-            echo "### Full Ecosystem Versions (versions.yaml)" >> $GITHUB_STEP_SUMMARY
-            echo '```yaml' >> $GITHUB_STEP_SUMMARY
-            yq '.components' versions.yaml >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "### Infrastructure Versions" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Version |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|---------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Tessellation | \`$(yq '.components.tessellation.version' versions.yaml)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| SDK | \`$(yq '.components.sdk.version' versions.yaml)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| PostgreSQL | \`$(yq '.infra.postgres' versions.yaml)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Redis | \`$(yq '.infra.redis' versions.yaml)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Java | \`$(yq '.infra.java' versions.yaml)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Prometheus | \`$(yq '.monitoring_tools.prometheus' versions.yaml)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Grafana | \`$(yq '.monitoring_tools.grafana' versions.yaml)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Cluster Target" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node 1**: \`${{ secrets.NODE1_IP || 'configured' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node 2**: \`${{ secrets.NODE2_IP || 'configured' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node 3**: \`${{ secrets.NODE3_IP || 'configured' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Services**: \`${{ secrets.SERVICES_SERVER_IP || 'configured' }}\`" >> $GITHUB_STEP_SUMMARY
