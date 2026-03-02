@@ -131,15 +131,15 @@ jobs:
                 - ottochain
 
             health-monitor:
-              image: ghcr.io/ottobot-ai/ottochain-health-monitor:latest
+              image: ghcr.io/ottobot-ai/ottochain-watchdog:latest
               container_name: health-monitor
               restart: unless-stopped
               env_file:
                 - .env
               environment:
-                - SSH_KEY_PATH=/home/monitor/.ssh/id_rsa
+                - SSH_KEY_PATH=/home/watchdog/.ssh/id_rsa
               volumes:
-                - /root/.ssh/hetzner_ottobot:/home/monitor/.ssh/id_rsa:ro
+                - /opt/ottochain-watchdog/ssh-key:/home/watchdog/.ssh/id_rsa:ro
               networks:
                 - ottochain
 
@@ -453,18 +453,23 @@ jobs:
           HEALTH_CHECK_INTERVAL=60
           RESTART_COOLDOWN_MINUTES=10
           MAX_RESTARTS_PER_HOUR=6
+          DATABASE_URL=postgresql://ottochain:${{ secrets.POSTGRES_PASSWORD }}@postgres:5432/ottochain
+          REDIS_URL=redis://redis:6379
           ENV_EOF
 
-      - name: Setup health monitor SSH key
+      - name: Setup watchdog SSH key
         run: |
           ssh services << 'SSHSETUP'
-          # Health monitor needs SSH access to metagraph nodes for auto-restart
+          # Watchdog needs SSH access to metagraph nodes for auto-restart
+          # Copy key with correct ownership (UID 1001 = watchdog user in container)
           if [ ! -f /root/.ssh/hetzner_ottobot ]; then
             echo "⚠️ SSH key not found at /root/.ssh/hetzner_ottobot"
-            echo "Health monitor auto-restart will not work without it."
+            echo "Watchdog auto-restart will not work without it."
           else
-            chmod 600 /root/.ssh/hetzner_ottobot
-            echo "✓ SSH key present for health monitor"
+            cp /root/.ssh/hetzner_ottobot /opt/ottochain-watchdog/ssh-key
+            chown 1001:1001 /opt/ottochain-watchdog/ssh-key
+            chmod 600 /opt/ottochain-watchdog/ssh-key
+            echo "✓ SSH key copied with correct ownership for watchdog"
           fi
           SSHSETUP
 
@@ -498,6 +503,26 @@ jobs:
               echo "ℹ Node exporter already running"
             fi'
           done
+
+      - name: Ensure monitoring_events table exists
+        run: |
+          echo "Creating monitoring_events table if not exists..."
+          ssh services "docker exec postgres psql -U ottochain -d ottochain -c '
+            CREATE TABLE IF NOT EXISTS monitoring_events (
+              id SERIAL PRIMARY KEY,
+              timestamp TIMESTAMPTZ DEFAULT NOW(),
+              event_type VARCHAR(50) NOT NULL,
+              condition VARCHAR(100),
+              severity VARCHAR(20) DEFAULT $$INFO$$,
+              scope VARCHAR(50),
+              affected_nodes TEXT[],
+              affected_layers TEXT[],
+              success BOOLEAN DEFAULT true,
+              message TEXT,
+              details JSONB
+            );
+          '"
+          echo "✓ monitoring_events table ready"
 
       - name: Health check
         run: |
