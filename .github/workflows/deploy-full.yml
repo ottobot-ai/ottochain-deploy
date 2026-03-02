@@ -144,7 +144,7 @@ jobs:
     name: Monitoring
     needs: [setup, services]
     if: always() && inputs.skip_monitoring != true && (needs.services.result == 'success' || needs.services.result == 'skipped')
-    uses: ./.github/workflows/deploy-monitoring.yml
+    uses: ./.github/workflows/deploy-watchdog.yml
     with:
       environment: ${{ needs.setup.outputs.environment }}
       include_exporters: true
