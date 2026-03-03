@@ -593,39 +593,6 @@ jobs:
           docker compose ps
           DEPLOY
 
-      - name: Configure Docker logging to Loki
-        run: |
-          SERVICES_IP="${{ secrets.HETZNER_SERVICES_IP }}"
-          LOKI_URL="http://${SERVICES_IP}:3100/loki/api/v1/push"
-          LOKI_DRIVER_VERSION="2.9.4"
-
-          DAEMON_JSON=$(cat <<EOF
-          {
-            "log-driver": "loki",
-            "log-opts": {
-              "loki-url": "${LOKI_URL}",
-              "loki-batch-size": "400",
-              "loki-retries": "3",
-              "loki-timeout": "2s",
-              "keep-file": "true"
-            }
-          }
-          EOF
-          )
-
-          for host in node1 node2 node3 services; do
-            # Install Loki Docker logging plugin if not present (pinned version, matches metagraph/services)
-            ssh $host "docker plugin ls --no-trunc | grep -q loki || docker plugin install grafana/loki-docker-driver:${LOKI_DRIVER_VERSION} --alias loki --grant-all-permissions"
-
-            # Write daemon.json — NOTE: requires manual Docker daemon restart to take effect for new default.
-            # Existing per-container logging directives (in compose files) take effect immediately.
-            ssh $host "echo '${DAEMON_JSON}' > /etc/docker/daemon.json && echo '✓ Docker Loki logging configured on \$(hostname)'"
-          done
-
-          echo "⚠️ Note: Docker daemon restart required on each node for new default log driver to take effect."
-          echo "  Per-container logging (metagraph/services compose files) is active immediately."
-
-      - name: Deploy node exporters
         if: ${{ inputs.include_exporters == true }}
         run: |
           for host in node1 node2 node3; do
