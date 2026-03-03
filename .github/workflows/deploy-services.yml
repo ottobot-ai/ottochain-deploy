@@ -76,6 +76,10 @@ jobs:
         run: |
           ssh services "mkdir -p /opt/ottochain-services"
 
+      - name: Install Loki Docker log driver
+        run: |
+          ssh services "docker plugin install grafana/loki-docker-driver:2.9.4 --alias loki --grant-all-permissions 2>/dev/null || docker plugin enable loki 2>/dev/null || true"
+
       # Note: Database reset moved to after containers are started
       
       - name: Write docker-compose.yml
@@ -89,6 +93,13 @@ jobs:
               image: ghcr.io/ottobot-ai/ottochain-services:${SERVICES_VERSION:-latest}
               container_name: gateway
               restart: unless-stopped
+              logging:
+                driver: loki
+                options:
+                  loki-url: "http://localhost:3100/loki/api/v1/push"
+                  loki-retries: "3"
+                  max-size: "50m"
+
               ports:
                 - "4000:4000"
               environment:
@@ -115,6 +126,13 @@ jobs:
               image: ghcr.io/ottobot-ai/ottochain-services:${SERVICES_VERSION:-latest}
               container_name: bridge
               restart: unless-stopped
+              logging:
+                driver: loki
+                options:
+                  loki-url: "http://localhost:3100/loki/api/v1/push"
+                  loki-retries: "3"
+                  max-size: "50m"
+
               ports:
                 - "3030:3030"
               environment:
@@ -141,6 +159,13 @@ jobs:
               image: ghcr.io/ottobot-ai/ottochain-services:${SERVICES_VERSION:-latest}
               container_name: indexer
               restart: unless-stopped
+              logging:
+                driver: loki
+                options:
+                  loki-url: "http://localhost:3100/loki/api/v1/push"
+                  loki-retries: "3"
+                  max-size: "50m"
+
               ports:
                 - "3031:3031"
               environment:
@@ -170,6 +195,13 @@ jobs:
               image: ghcr.io/ottobot-ai/ottochain-services:${SERVICES_VERSION:-latest}
               container_name: monitor
               restart: unless-stopped
+              logging:
+                driver: loki
+                options:
+                  loki-url: "http://localhost:3100/loki/api/v1/push"
+                  loki-retries: "3"
+                  max-size: "50m"
+
               ports:
                 - "3032:3032"
               environment:
@@ -200,6 +232,13 @@ jobs:
               image: ghcr.io/ottobot-ai/ottochain-services:${SERVICES_VERSION:-latest}
               container_name: traffic-gen
               restart: unless-stopped
+              logging:
+                driver: loki
+                options:
+                  loki-url: "http://localhost:3100/loki/api/v1/push"
+                  loki-retries: "3"
+                  max-size: "50m"
+
               environment:
                 - SERVICE=traffic-generator
                 - NODE_ENV=production
@@ -222,6 +261,13 @@ jobs:
               image: ghcr.io/ottobot-ai/ottochain-explorer:${EXPLORER_VERSION:-latest}
               container_name: explorer
               restart: unless-stopped
+              logging:
+                driver: loki
+                options:
+                  loki-url: "http://localhost:3100/loki/api/v1/push"
+                  loki-retries: "3"
+                  max-size: "50m"
+
               ports:
                 - "8081:80"
               networks:
