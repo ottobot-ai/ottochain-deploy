@@ -131,9 +131,9 @@ jobs:
               networks:
                 - ottochain
 
-            health-monitor:
+            watchdog:
               image: ghcr.io/ottobot-ai/ottochain-watchdog:latest
-              container_name: health-monitor
+              container_name: watchdog
               restart: unless-stopped
               env_file:
                 - .env
@@ -649,7 +649,7 @@ jobs:
           alertmgr=$(ssh services "curl -sf -o /dev/null -w '%{http_code}' http://localhost:9093/-/healthy" || echo "000")
           echo "Alertmanager: HTTP $alertmgr"
           
-          monitor=$(ssh services "docker ps --filter name=health-monitor --format '{{.Status}}'" || echo "not running")
+          monitor=$(ssh services "docker ps --filter name=watchdog --format '{{.Status}}'" || echo "not running")
           echo "Health Monitor: $monitor"
 
           # Smoke test: verify Prometheus can reach scrape targets
