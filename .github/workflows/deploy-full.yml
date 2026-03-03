@@ -220,7 +220,7 @@ jobs:
       - name: Create PR with deployed state
         env:
           TARGET_ENV: ${{ needs.setup.outputs.environment }}
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.DEPLOY_REPO_TOKEN || github.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
