@@ -158,6 +158,49 @@ jobs:
               networks:
                 - ottochain
 
+            node-exporter:
+              image: prom/node-exporter:latest
+              container_name: node-exporter
+              restart: unless-stopped
+              ports:
+                - "9100:9100"
+              volumes:
+                - /proc:/host/proc:ro
+                - /sys:/host/sys:ro
+                - /:/rootfs:ro
+              command:
+                - '--path.procfs=/host/proc'
+                - '--path.sysfs=/host/sys'
+                - '--path.rootfs=/rootfs'
+              networks:
+                - ottochain
+
+            postgres-exporter:
+              image: prometheuscommunity/postgres-exporter:latest
+              container_name: postgres-exporter
+              restart: unless-stopped
+              ports:
+                - "9187:9187"
+              environment:
+                - DATA_SOURCE_NAME=postgresql://ottochain:$${POSTGRES_PASSWORD:-ottochain}@postgres:5432/ottochain?sslmode=disable
+              depends_on:
+                - prometheus
+              networks:
+                - ottochain
+
+            redis-exporter:
+              image: oliver006/redis_exporter:latest
+              container_name: redis-exporter
+              restart: unless-stopped
+              ports:
+                - "9121:9121"
+              environment:
+                - REDIS_ADDR=redis://redis:6379
+              depends_on:
+                - prometheus
+              networks:
+                - ottochain
+
           volumes:
             prometheus_data:
             grafana_data:
