@@ -191,6 +191,7 @@ jobs:
     if: always() && (needs.metagraph.result == 'success' || needs.services.result == 'success')
     permissions:
       contents: write
+      pull-requests: write
 
     steps:
       - name: Checkout main
