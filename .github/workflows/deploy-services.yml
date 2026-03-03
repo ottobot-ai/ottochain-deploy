@@ -439,9 +439,14 @@ jobs:
           ln -sf /etc/nginx/sites-available/ottochain /etc/nginx/sites-enabled/ottochain
           NGINX_SCRIPT
 
-          # Deploy status.ottochain.ai from template file (replaces sed injection)
-          scp nginx/status.ottochain.ai.conf services:/etc/nginx/sites-available/status.ottochain.ai
-          ssh services "ln -sf /etc/nginx/sites-available/status.ottochain.ai /etc/nginx/sites-enabled/status.ottochain.ai && nginx -t && nginx -s reload"
+          # Deploy all nginx configs from templates (with SSL)
+          for site in bridge.ottochain.ai explorer.ottochain.ai status.ottochain.ai grafana.ottochain.ai prometheus.ottochain.ai; do
+            scp nginx/${site}.conf services:/etc/nginx/sites-available/${site}
+            ssh services "ln -sf /etc/nginx/sites-available/${site} /etc/nginx/sites-enabled/${site}"
+          done
+          # Remove old default config (had grafana+prometheus jammed in)
+          ssh services "rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-enabled/default.bak" || true
+          ssh services "nginx -t && nginx -s reload"
 
       - name: Health check
         run: |
