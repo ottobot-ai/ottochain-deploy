@@ -514,6 +514,8 @@ jobs:
       - name: Deploy Promtail on metagraph nodes
         run: |
           SERVICES_IP="${{ secrets.HETZNER_SERVICES_IP }}"
+          # Verify Loki is accepting pushes before deploying shippers
+          ssh services "curl -sf http://localhost:3100/ready" || echo "Warning: Loki not ready yet"
           for host in node1 node2 node3; do
             ssh $host "docker rm -f promtail 2>/dev/null || true"
             ssh $host "mkdir -p /opt/promtail"
