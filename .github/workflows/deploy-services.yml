@@ -218,6 +218,7 @@ jobs:
                 - REDIS_URL=${REDIS_URL:-redis://redis:6379}
                 - TRAFFIC_GEN_URL=http://traffic-gen:3033
                 - INDEXER_URL=http://indexer:3031
+                - EXPLORER_URL=http://explorer:80
               depends_on:
                 - redis
               networks:
