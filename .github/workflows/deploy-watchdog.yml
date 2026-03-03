@@ -32,6 +32,7 @@ jobs:
   deploy:
     name: Deploy Monitoring Stack
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
 
     steps:
       - name: Checkout (needed for composite actions)
@@ -479,6 +480,8 @@ jobs:
           cd /opt/ottochain-watchdog
           # Remove old containers to avoid name conflicts on redeploy
           docker compose down --remove-orphans 2>/dev/null || true
+          # Remove orphans from previous compose projects (different path/project name)
+
           echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           docker compose pull
           docker compose up -d
@@ -505,26 +508,6 @@ jobs:
               echo "ℹ Node exporter already running"
             fi'
           done
-
-      - name: Ensure monitoring_events table exists
-        run: |
-          echo "Creating monitoring_events table if not exists..."
-          ssh services "docker exec postgres psql -U ottochain -d ottochain -c '
-            CREATE TABLE IF NOT EXISTS monitoring_events (
-              id SERIAL PRIMARY KEY,
-              timestamp TIMESTAMPTZ DEFAULT NOW(),
-              event_type VARCHAR(50) NOT NULL,
-              condition VARCHAR(100),
-              severity VARCHAR(20) DEFAULT $$INFO$$,
-              scope VARCHAR(50),
-              affected_nodes TEXT[],
-              affected_layers TEXT[],
-              success BOOLEAN DEFAULT true,
-              message TEXT,
-              details JSONB
-            );
-          '"
-          echo "✓ monitoring_events table ready"
 
       - name: Health check
         run: |

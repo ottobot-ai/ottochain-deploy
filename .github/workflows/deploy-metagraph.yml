@@ -61,6 +61,7 @@ jobs:
   deploy:
     name: Deploy Full Stack
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
     outputs:
       gl0_peer_id: ${{ steps.wait-gl0.outputs.peer_id }}
       ml0_peer_id: ${{ steps.wait-ml0.outputs.peer_id }}
@@ -835,6 +836,7 @@ jobs:
   health-check:
     name: Health Check
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
     needs: [deploy]
     if: always() && needs.deploy.result == 'success'
 
