@@ -479,6 +479,8 @@ jobs:
           cd /opt/ottochain-watchdog
           # Remove old containers to avoid name conflicts on redeploy
           docker compose down --remove-orphans 2>/dev/null || true
+          # Remove orphans from previous compose projects (different path/project name)
+          docker rm -f loki prometheus grafana alertmanager 2>/dev/null || true
           echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           docker compose pull
           docker compose up -d
