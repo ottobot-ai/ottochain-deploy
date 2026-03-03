@@ -144,6 +144,20 @@ jobs:
               networks:
                 - ottochain
 
+            promtail:
+              image: grafana/promtail:2.9.4
+              container_name: promtail
+              restart: unless-stopped
+              volumes:
+                - /var/lib/docker/containers:/var/lib/docker/containers:ro
+                - /var/run/docker.sock:/var/run/docker.sock:ro
+                - ./promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+              command: -config.file=/etc/promtail/config.yml
+              depends_on:
+                - loki
+              networks:
+                - ottochain
+
           volumes:
             prometheus_data:
             grafana_data:
@@ -184,22 +198,42 @@ jobs:
           scrape_configs:
             - job_name: 'gl0'
               static_configs:
-                - targets: ['${METAGRAPH_IP}:9000']
+                - targets: ['${NODE1_IP}:9000']
+                  labels: { node: 'node1' }
+                - targets: ['${NODE2_IP}:9000']
+                  labels: { node: 'node2' }
+                - targets: ['${NODE3_IP}:9000']
+                  labels: { node: 'node3' }
               metrics_path: /metrics
 
             - job_name: 'ml0'
               static_configs:
-                - targets: ['${METAGRAPH_IP}:9200']
+                - targets: ['${NODE1_IP}:9200']
+                  labels: { node: 'node1' }
+                - targets: ['${NODE2_IP}:9200']
+                  labels: { node: 'node2' }
+                - targets: ['${NODE3_IP}:9200']
+                  labels: { node: 'node3' }
               metrics_path: /metrics
 
             - job_name: 'cl1'
               static_configs:
-                - targets: ['${METAGRAPH_IP}:9300']
+                - targets: ['${NODE1_IP}:9300']
+                  labels: { node: 'node1' }
+                - targets: ['${NODE2_IP}:9300']
+                  labels: { node: 'node2' }
+                - targets: ['${NODE3_IP}:9300']
+                  labels: { node: 'node3' }
               metrics_path: /metrics
 
             - job_name: 'dl1'
               static_configs:
-                - targets: ['${METAGRAPH_IP}:9400']
+                - targets: ['${NODE1_IP}:9400']
+                  labels: { node: 'node1' }
+                - targets: ['${NODE2_IP}:9400']
+                  labels: { node: 'node2' }
+                - targets: ['${NODE3_IP}:9400']
+                  labels: { node: 'node3' }
               metrics_path: /metrics
 
             - job_name: 'monitor'
@@ -391,6 +425,11 @@ jobs:
               url: http://prometheus:9090
               isDefault: true
               editable: false
+            - name: Loki
+              type: loki
+              access: proxy
+              url: http://loki:3100
+              editable: false
           DS_EOF
 
           # Dashboards provider
@@ -443,6 +482,72 @@ jobs:
             reporting_enabled: false
           LOKI_EOF
 
+      - name: Write Promtail config (services node)
+        run: |
+          ssh services "mkdir -p /opt/ottochain-watchdog/promtail"
+          ssh services "cat > /opt/ottochain-watchdog/promtail/promtail-config.yml" << 'PROMTAIL_EOF'
+          server:
+            http_listen_port: 9080
+            grpc_listen_port: 0
+
+          positions:
+            filename: /tmp/positions.yaml
+
+          clients:
+            - url: http://loki:3100/loki/api/v1/push
+
+          scrape_configs:
+            - job_name: docker
+              docker_sd_configs:
+                - host: unix:///var/run/docker.sock
+                  refresh_interval: 5s
+              relabel_configs:
+                - source_labels: ['__meta_docker_container_name']
+                  regex: '/(.*)'
+                  target_label: 'container'
+                - source_labels: ['__meta_docker_container_log_stream']
+                  target_label: 'stream'
+                - source_labels: ['__meta_docker_network_name']
+                  target_label: 'network'
+          PROMTAIL_EOF
+
+      - name: Deploy Promtail on metagraph nodes
+        run: |
+          SERVICES_IP="${{ secrets.HETZNER_SERVICES_IP }}"
+          # Verify Loki is accepting pushes before deploying shippers
+          ssh services "curl -sf http://localhost:3100/ready" || echo "Warning: Loki not ready yet"
+          for host in node1 node2 node3; do
+            ssh $host "docker rm -f promtail 2>/dev/null || true"
+            ssh $host "mkdir -p /opt/promtail"
+            ssh $host "cat > /opt/promtail/config.yml << PTCFG
+          server:
+            http_listen_port: 9080
+            grpc_listen_port: 0
+          positions:
+            filename: /tmp/positions.yaml
+          clients:
+            - url: http://${SERVICES_IP}:3100/loki/api/v1/push
+          scrape_configs:
+            - job_name: docker
+              docker_sd_configs:
+                - host: unix:///var/run/docker.sock
+                  refresh_interval: 5s
+              relabel_configs:
+                - source_labels: ['__meta_docker_container_name']
+                  regex: '/(.*)'
+                  target_label: 'container'
+                - source_labels: ['__meta_docker_container_log_stream']
+                  target_label: 'stream'
+          PTCFG"
+            ssh $host "docker run -d --name promtail --restart unless-stopped \
+              -v /opt/promtail/config.yml:/etc/promtail/config.yml:ro \
+              -v /var/lib/docker/containers:/var/lib/docker/containers:ro \
+              -v /var/run/docker.sock:/var/run/docker.sock:ro \
+              grafana/promtail:2.9.4 -config.file=/etc/promtail/config.yml" &
+          done
+          wait
+          echo "✓ Promtail deployed on all metagraph nodes"
+
       - name: Write .env
         run: |
           ssh services "cat > /opt/ottochain-watchdog/.env" << ENV_EOF
@@ -488,7 +593,6 @@ jobs:
           docker compose ps
           DEPLOY
 
-      - name: Deploy node exporters
         if: ${{ inputs.include_exporters == true }}
         run: |
           for host in node1 node2 node3; do
