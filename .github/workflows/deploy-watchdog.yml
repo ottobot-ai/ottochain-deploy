@@ -525,7 +525,7 @@ jobs:
               docker plugin install grafana/loki-docker-driver:latest --alias loki --grant-all-permissions
 
             # Set as default logging driver
-            cat > /etc/docker/daemon.json << 'DJSON'
+            cat > /etc/docker/daemon.json << DJSON
           {
             "log-driver": "loki",
             "log-opts": {
