@@ -176,11 +176,12 @@ Loki → Grafana log explorer
 
 ## Environments
 
-| Environment | Purpose | State |
-|-------------|---------|-------|
-| scratch | Development testing | Active |
-| staging | Pre-production | Planned |
-| production | Live | Planned |
+| Environment | Hypergraph | Purpose | State |
+|-------------|------------|---------|-------|
+| scratch | Dedicated (private) | Development testing | Active |
+| beta | Constellation Testnet | Public beta testing | Planned |
+| staging | Constellation IntegrationNet | Pre-production | Planned |
+| prod | Constellation Mainnet | Production | Planned |
 
 Each environment uses GitHub Environments for secrets/approvals.
 Deployed state tracked in `versions.yaml` under `deployed.<env>`.
