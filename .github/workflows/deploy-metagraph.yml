@@ -1,16 +1,15 @@
 # Deploy OttoChain Metagraph
 #
 # Deploys the metagraph to 3 Hetzner nodes using Docker Compose.
-# Layers are started sequentially across all nodes: GL0 → ML0 → DL1
 #
 # Flow:
-#   1. Pull image, extract peer IDs from p12 keystores
-#   2. Genesis (if wipe_state): GL0 genesis → ML0 create-genesis → stop
-#   3. Write .env + compose to each node
-#   4. Start GL0 on all nodes → form cluster
-#   5. Start ML0 on all nodes → form cluster
-#   6. Start DL1 on all nodes → form cluster
-#   7. Health check
+#   1. Prepare: decode keystores, extract peer IDs in CI
+#   2. Genesis (if needed): run GL0 + ML0 genesis entirely in CI
+#   3. Deploy: push compose + .env + genesis files, start layers sequentially
+#   4. Health check
+#
+# Genesis runs in CI — nodes never create genesis. Watchdog can't accidentally genesis.
+# Inter-node traffic uses Hetzner private network (10.x). Public IPs for external access.
 
 name: Deploy Metagraph
 
@@ -64,11 +63,10 @@ env:
   IMAGE: ghcr.io/scasplte2/ottochain-metagraph
   IMAGE_TAG: ${{ inputs.image_tag || 'latest' }}
   COMPOSE_FILE: compose/metagraph-node.yml
-  DEPLOY_DIR: /opt/ottochain
 
 jobs:
 
-  # ── Prepare: pull image, extract peer IDs ─────────────────────────────
+  # ── Prepare: extract peer IDs from keystores in CI ─────────────────────
   prepare:
     name: Prepare
     runs-on: ubuntu-latest
@@ -77,6 +75,7 @@ jobs:
       peer_id_1: ${{ steps.peer-ids.outputs.peer_id_1 }}
       peer_id_2: ${{ steps.peer-ids.outputs.peer_id_2 }}
       peer_id_3: ${{ steps.peer-ids.outputs.peer_id_3 }}
+      wallet_address: ${{ steps.wallet.outputs.address }}
       needs_genesis: ${{ steps.genesis-check.outputs.needs_genesis }}
 
     steps:
@@ -92,6 +91,49 @@ jobs:
           node3_ip: ${{ secrets.HETZNER_NODE3_IP }}
           hosts: nodes
 
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Download cl-wallet
+        run: |
+          curl -sL -o cl-wallet.jar \
+            https://github.com/Constellation-Labs/tessellation/releases/download/v4.0.0-rc.2/cl-wallet.jar
+
+      - name: Decode keystores
+        run: |
+          mkdir -p keys
+          echo "${{ secrets.CL_KEYSTORE_NODE1 }}" | base64 -d > keys/key1.p12
+          echo "${{ secrets.CL_KEYSTORE_NODE2 }}" | base64 -d > keys/key2.p12
+          echo "${{ secrets.CL_KEYSTORE_NODE3 }}" | base64 -d > keys/key3.p12
+
+      - name: Extract peer IDs
+        id: peer-ids
+        run: |
+          for i in 1 2 3; do
+            PEER_ID=$(CL_KEYSTORE=keys/key${i}.p12 CL_KEYALIAS=alias \
+              CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
+              java -jar cl-wallet.jar show-id 2>/dev/null)
+
+            if [ -z "$PEER_ID" ]; then
+              echo "::error::Failed to extract peer ID from key${i}.p12"
+              exit 1
+            fi
+            echo "peer_id_${i}=$PEER_ID" >> "$GITHUB_OUTPUT"
+            echo "✓ Node${i} peer ID: ${PEER_ID:0:32}..."
+          done
+
+      - name: Extract wallet address
+        id: wallet
+        run: |
+          WALLET=$(CL_KEYSTORE=keys/key1.p12 CL_KEYALIAS=alias \
+            CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
+            java -jar cl-wallet.jar show-address 2>&1 | grep -oP 'DAG[a-zA-Z0-9]+' | head -1)
+          echo "address=$WALLET" >> "$GITHUB_OUTPUT"
+          echo "✓ Wallet: $WALLET"
+
       - name: Docker login and pull
         uses: ./.github/actions/docker-login-pull
         with:
@@ -99,53 +141,18 @@ jobs:
           image: ${{ env.IMAGE }}
           image_tag: ${{ env.IMAGE_TAG }}
 
-      - name: Ensure cl-wallet.jar on all nodes
-        run: |
-          CL_WALLET_URL="https://github.com/Constellation-Labs/tessellation/releases/download/v4.0.0-rc.2/cl-wallet.jar"
-          for host in node1 node2 node3; do
-            ssh $host "test -f /opt/ottochain/cl-wallet.jar || curl -sL -o /opt/ottochain/cl-wallet.jar '$CL_WALLET_URL'"
-          done
-
-      - name: Extract peer IDs from keystores
-        id: peer-ids
-        run: |
-          # Node1: keys/key.p12, Node2: keys2/key.p12, Node3: keys3/key.p12
-          for node_info in "1:node1:keys" "2:node2:keys2" "3:node3:keys3"; do
-            NUM="${node_info%%:*}"
-            rest="${node_info#*:}"
-            HOST="${rest%%:*}"
-            KEYS="${rest##*:}"
-
-            PEER_ID=$(ssh $HOST "CL_KEYSTORE=/opt/ottochain/${KEYS}/key.p12 \
-              CL_KEYALIAS=alias \
-              CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
-              java -jar /opt/ottochain/cl-wallet.jar show-id" 2>/dev/null)
-
-            if [ -z "$PEER_ID" ]; then
-              echo "::error::Failed to extract peer ID from $HOST ($KEYS/key.p12)"
-              exit 1
-            fi
-
-            echo "peer_id_${NUM}=$PEER_ID" >> "$GITHUB_OUTPUT"
-            echo "✓ Node${NUM} peer ID: ${PEER_ID:0:32}..."
-          done
-
       - name: Check if genesis needed
         id: genesis-check
         run: |
           if [ "${{ inputs.wipe_state }}" = "true" ]; then
             echo "needs_genesis=true" >> "$GITHUB_OUTPUT"
-            echo "Genesis: REQUIRED (wipe_state=true)"
-          elif ! ssh node1 "test -f /opt/ottochain/genesis/genesis.address"; then
+          elif ! ssh node1 "test -f /opt/ottochain/genesis/genesis.address" 2>/dev/null; then
             echo "needs_genesis=true" >> "$GITHUB_OUTPUT"
-            echo "Genesis: REQUIRED (genesis.address missing)"
           else
             echo "needs_genesis=false" >> "$GITHUB_OUTPUT"
-            TOKEN_ID=$(ssh node1 'cat /opt/ottochain/genesis/genesis.address')
-            echo "Genesis: NOT NEEDED (TOKEN_ID=$TOKEN_ID)"
           fi
 
-  # ── Genesis: create GL0 + ML0 genesis snapshots ───────────────────────
+  # ── Genesis: create GL0 + ML0 genesis entirely in CI ──────────────────
   genesis:
     name: Genesis
     runs-on: ubuntu-latest
@@ -153,140 +160,137 @@ jobs:
     needs: [prepare]
     if: needs.prepare.outputs.needs_genesis == 'true'
     outputs:
-      token_id: ${{ steps.run-genesis.outputs.token_id }}
+      token_id: ${{ steps.ml0-genesis.outputs.token_id }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup SSH
-        uses: ./.github/actions/setup-ssh
-        with:
-          ssh_key: ${{ secrets.HETZNER_SSH_KEY }}
-          node1_ip: ${{ secrets.HETZNER_NODE1_IP }}
-          node2_ip: ${{ secrets.HETZNER_NODE2_IP }}
-          node3_ip: ${{ secrets.HETZNER_NODE3_IP }}
-          hosts: nodes
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ottobot-ai --password-stdin
 
-      - name: Stop existing containers
-        run: |
-          for host in node1 node2 node3; do
-            echo "--- Stopping containers on $host ---"
-            ssh $host "docker rm -f gl0 gl1 ml0 cl1 dl1 promtail node-exporter 2>/dev/null || true"
-            echo "✓ $host cleaned"
-          done
+      - name: Pull image
+        run: docker pull ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}
 
-      - name: Wipe state on all nodes
+      - name: Decode node1 keystore
         run: |
-          for host in node1 node2 node3; do
-            echo "--- Wiping state on $host ---"
-            ssh $host "rm -rf /opt/ottochain/{gl0,gl1,ml0,cl1,dl1}-{data,logs}"
-            ssh $host "mkdir -p /opt/ottochain/{gl0,ml0,dl1}-{data,logs}"
-            ssh $host "rm -rf /opt/ottochain/genesis/*"
-            ssh $host "mkdir -p /opt/ottochain/genesis"
-            ssh $host "sync"
-            echo "✓ $host wiped"
-          done
+          mkdir -p keys genesis
+          echo "${{ secrets.CL_KEYSTORE_NODE1 }}" | base64 -d > keys/key.p12
 
       - name: Create GL0 genesis CSV
         run: |
-          WALLET=$(ssh node1 "CL_KEYSTORE=/opt/ottochain/keys/key.p12 \
-            CL_KEYALIAS=alias \
-            CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
-            java -jar /opt/ottochain/cl-wallet.jar show-address" 2>&1 | grep -oP 'DAG[a-zA-Z0-9]+' | head -1)
-
+          WALLET="${{ needs.prepare.outputs.wallet_address }}"
           if [ -z "$WALLET" ]; then
-            echo "::error::Failed to extract wallet address"
-            exit 1
+            # Fallback: extract here
+            WALLET=$(docker run --rm \
+              -v $PWD/keys:/keys:ro \
+              -e CL_KEYSTORE=/keys/key.p12 \
+              -e CL_KEYALIAS=alias \
+              -e CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
+              --entrypoint '' \
+              ${{ env.IMAGE }}:${{ env.IMAGE_TAG }} \
+              java -jar /ottochain/jars/cl-wallet.jar show-address 2>&1 | grep -oP 'DAG[a-zA-Z0-9]+' | head -1 || true)
           fi
-          echo "Wallet: $WALLET"
 
-          ssh node1 "echo '${WALLET},1000000000000000' > /opt/ottochain/genesis/genesis.csv"
-          echo "✓ GL0 genesis CSV created"
+          # Double fallback: use setup-java + downloaded cl-wallet
+          if [ -z "$WALLET" ]; then
+            curl -sL -o cl-wallet.jar \
+              https://github.com/Constellation-Labs/tessellation/releases/download/v4.0.0-rc.2/cl-wallet.jar
+            WALLET=$(CL_KEYSTORE=keys/key.p12 CL_KEYALIAS=alias \
+              CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
+              java -jar cl-wallet.jar show-address 2>&1 | grep -oP 'DAG[a-zA-Z0-9]+' | head -1)
+          fi
 
-      - name: Start GL0 for genesis
+          echo "${WALLET},1000000000000000" > genesis/genesis.csv
+          echo "✓ Genesis CSV: $WALLET"
+
+      - name: Start GL0 in CI
         run: |
-          NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
           GL0_PEER_ID="${{ needs.prepare.outputs.peer_id_1 }}"
 
-          ssh node1 "docker run -d --name gl0 \
-            --restart unless-stopped \
+          docker run -d --name gl0 \
             -p 9000:9000 -p 9001:9001 -p 9002:9002 \
-            -v /opt/ottochain/keys:/ottochain/keys:ro \
-            -v /opt/ottochain/gl0-data:/ottochain/data \
-            -v /opt/ottochain/gl0-logs:/ottochain/logs \
-            -v /opt/ottochain/genesis:/ottochain/genesis:ro \
+            -v $PWD/keys:/ottochain/keys:ro \
+            -v $PWD/genesis:/ottochain/genesis:ro \
             -e LAYER=gl0 \
             -e IS_INITIAL=true \
             -e CL_APP_ENV=dev \
-            -e CL_EXTERNAL_IP=${NODE1_IP} \
+            -e CL_EXTERNAL_IP=127.0.0.1 \
             -e CL_COLLATERAL=0 \
             -e CL_KEYSTORE=/ottochain/keys/key.p12 \
             -e CL_KEYALIAS=alias \
             -e CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
-            -e JAVA_OPTS='-Xmx3g -Xms2g -XX:+UseZGC' \
-            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
+            -e JAVA_OPTS='-Xmx2g -Xms1g -XX:+UseZGC' \
+            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}
 
       - name: Wait for GL0 Ready
-        uses: ./.github/actions/wait-for-node-ready
-        with:
-          ssh_host: node1
-          port: '9000'
-          node_name: GL0
-          max_attempts: '90'
+        run: |
+          for i in $(seq 1 90); do
+            state=$(curl -sf http://localhost:9000/node/info 2>/dev/null | jq -r .state 2>/dev/null || echo "")
+            if [ "$state" = "Ready" ]; then
+              echo "✓ GL0 Ready (attempt $i)"
+              break
+            fi
+            if [ "$i" = "90" ]; then
+              echo "::error::GL0 failed to reach Ready"
+              docker logs gl0 --tail 30
+              exit 1
+            fi
+            sleep 5
+          done
 
       - name: Create ML0 genesis snapshot
-        id: run-genesis
+        id: ml0-genesis
         run: |
-          NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
           GL0_PEER_ID="${{ needs.prepare.outputs.peer_id_1 }}"
 
-          ssh node1 "docker run --rm \
+          docker run --rm \
             --network host \
             --entrypoint '' \
-            -v /opt/ottochain/keys:/ottochain/keys:ro \
-            -v /opt/ottochain/genesis:/ottochain/genesis \
+            -v $PWD/keys:/ottochain/keys:ro \
+            -v $PWD/genesis:/ottochain/genesis \
             -w /ottochain/genesis \
             -e CL_KEYSTORE=/ottochain/keys/key.p12 \
             -e CL_KEYALIAS=alias \
             -e CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
             -e CL_GLOBAL_L0_PEER_ID=${GL0_PEER_ID} \
-            -e CL_GLOBAL_L0_PEER_HOST=${NODE1_IP} \
+            -e CL_GLOBAL_L0_PEER_HOST=127.0.0.1 \
             -e CL_GLOBAL_L0_PEER_PORT=9000 \
-            -e CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP} \
+            -e CL_GLOBAL_L0_PEER_HTTP_HOST=127.0.0.1 \
             -e CL_GLOBAL_L0_PEER_HTTP_PORT=9000 \
             -e CL_PUBLIC_HTTP_PORT=9200 \
             -e CL_P2P_HTTP_PORT=9201 \
             -e CL_CLI_HTTP_PORT=9202 \
             -e CL_COLLATERAL=0 \
             -e CL_APP_ENV=dev \
-            -e CL_EXTERNAL_IP=${NODE1_IP} \
+            -e CL_EXTERNAL_IP=127.0.0.1 \
             ${{ env.IMAGE }}:${{ env.IMAGE_TAG }} \
-            java -jar /ottochain/jars/ml0.jar create-genesis /ottochain/genesis/genesis.csv"
+            java -jar /ottochain/jars/ml0.jar create-genesis /ottochain/genesis/genesis.csv
 
-          # Verify
-          if ! ssh node1 "test -f /opt/ottochain/genesis/genesis.snapshot"; then
-            echo "::error::genesis.snapshot not found"
+          if [ ! -f genesis/genesis.snapshot ] || [ ! -f genesis/genesis.address ]; then
+            echo "::error::ML0 genesis failed"
             exit 1
           fi
 
-          TOKEN_ID=$(ssh node1 'cat /opt/ottochain/genesis/genesis.address')
+          TOKEN_ID=$(cat genesis/genesis.address)
           echo "token_id=$TOKEN_ID" >> "$GITHUB_OUTPUT"
-          echo "✅ ML0 genesis complete — TOKEN_ID=$TOKEN_ID"
+          echo "✅ Genesis complete — TOKEN_ID=$TOKEN_ID"
 
-      - name: Stop genesis GL0
-        run: ssh node1 "docker rm -f gl0"
+      - name: Stop GL0
+        if: always()
+        run: docker rm -f gl0 2>/dev/null || true
 
-      - name: Distribute genesis files
-        run: |
-          for host in node2 node3; do
-            ssh $host "mkdir -p /opt/ottochain/genesis"
-            ssh node1 'cat /opt/ottochain/genesis/genesis.address' | ssh $host 'cat > /opt/ottochain/genesis/genesis.address'
-            ssh node1 'cat /opt/ottochain/genesis/genesis.csv' | ssh $host 'cat > /opt/ottochain/genesis/genesis.csv'
-            echo "✓ Genesis files copied to $host"
-          done
+      - name: Upload genesis artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: genesis
+          path: |
+            genesis/genesis.address
+            genesis/genesis.snapshot
+            genesis/genesis.csv
+          retention-days: 7
 
-  # ── Deploy: compose up layer-by-layer across all nodes ─────────────────
+  # ── Deploy: push compose, start layers sequentially ────────────────────
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
@@ -311,82 +315,145 @@ jobs:
           node3_ip: ${{ secrets.HETZNER_NODE3_IP }}
           hosts: nodes
 
+      - name: Download genesis artifacts
+        if: needs.genesis.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: genesis
+          path: genesis
+
+      - name: Stop existing containers
+        run: |
+          for host in node1 node2 node3; do
+            ssh $host "cd /opt/ottochain && docker compose down 2>/dev/null || true"
+            ssh $host "docker rm -f gl0 gl1 ml0 cl1 dl1 promtail node-exporter 2>/dev/null || true"
+          done
+
+      - name: Wipe state (if genesis)
+        if: needs.genesis.result == 'success'
+        run: |
+          for host in node1 node2 node3; do
+            ssh $host "rm -rf /opt/ottochain/{gl0,gl1,ml0,cl1,dl1}-{data,logs}"
+            ssh $host "mkdir -p /opt/ottochain/{gl0,ml0,dl1}-{data,logs}"
+            ssh $host "sync"
+          done
+
+      - name: Push genesis files to all nodes
+        if: needs.genesis.result == 'success'
+        run: |
+          for host in node1 node2 node3; do
+            ssh $host "mkdir -p /opt/ottochain/genesis"
+            scp genesis/genesis.address ${host}:/opt/ottochain/genesis/
+            scp genesis/genesis.snapshot ${host}:/opt/ottochain/genesis/
+            scp genesis/genesis.csv ${host}:/opt/ottochain/genesis/
+            echo "✓ Genesis files pushed to $host"
+          done
+
       - name: Resolve TOKEN_ID
         id: resolve-token
         run: |
-          # From genesis job output, or read from existing file
           TOKEN_ID="${{ needs.genesis.outputs.token_id }}"
           if [ -z "$TOKEN_ID" ]; then
             TOKEN_ID=$(ssh node1 'cat /opt/ottochain/genesis/genesis.address 2>/dev/null' || echo "")
           fi
           if [ -z "$TOKEN_ID" ]; then
-            echo "::error::TOKEN_ID not available (no genesis output and no genesis.address on node1)"
+            echo "::error::TOKEN_ID not available"
             exit 1
           fi
           echo "token_id=$TOKEN_ID" >> "$GITHUB_OUTPUT"
-          echo "TOKEN_ID=$TOKEN_ID"
-
-      - name: Stop existing containers
-        if: ${{ needs.genesis.result == 'skipped' }}
-        run: |
-          # Only stop if we didn't already wipe in genesis job
-          for host in node1 node2 node3; do
-            ssh $host "docker rm -f gl0 gl1 ml0 cl1 dl1 promtail node-exporter 2>/dev/null || true"
-          done
 
       - name: Deploy compose + .env to all nodes
         run: |
           NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
           NODE2_IP="${{ secrets.HETZNER_NODE2_IP }}"
           NODE3_IP="${{ secrets.HETZNER_NODE3_IP }}"
+          # Private IPs for inter-node traffic
+          NODE1_PRIV="${{ secrets.HETZNER_NODE1_PRIVATE_IP }}"
+          NODE2_PRIV="${{ secrets.HETZNER_NODE2_PRIVATE_IP }}"
+          NODE3_PRIV="${{ secrets.HETZNER_NODE3_PRIVATE_IP }}"
+          SERVICES_PRIV="${{ secrets.HETZNER_SERVICES_PRIVATE_IP }}"
           GL0_PEER_ID="${{ needs.prepare.outputs.peer_id_1 }}"
           ML0_PEER_ID="${{ needs.prepare.outputs.peer_id_1 }}"
           TOKEN_ID="${{ steps.resolve-token.outputs.token_id }}"
 
-          for node_info in "1:node1:${NODE1_IP}:keys:true" "2:node2:${NODE2_IP}:keys2:" "3:node3:${NODE3_IP}:keys3:"; do
+          # JVM opts (shared across nodes)
+          JVM_COMMON="-XX:+UseZGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:ReservedCodeCacheSize=128m -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:SoftRefLRUPolicyMSPerMB=50 -XX:ZUncommitDelay=60 -Dlogback.configurationFile=/ottochain/logback.xml"
+
+          # node_num:ssh_host:public_ip:private_ip:keys_dir:is_initial
+          for node_info in "1:node1:${NODE1_IP}:${NODE1_PRIV}:keys:true" "2:node2:${NODE2_IP}:${NODE2_PRIV}:keys2:" "3:node3:${NODE3_IP}:${NODE3_PRIV}:keys3:"; do
             NUM="${node_info%%:*}"
             rest="${node_info#*:}"
             HOST="${rest%%:*}"
             rest="${rest#*:}"
-            IP="${rest%%:*}"
+            PUBLIC_IP="${rest%%:*}"
+            rest="${rest#*:}"
+            PRIVATE_IP="${rest%%:*}"
             rest="${rest#*:}"
             KEYS="${rest%%:*}"
             IS_INITIAL="${rest##*:}"
-
-            echo "--- Deploying to $HOST ---"
 
             # Copy compose file
             ssh $HOST "mkdir -p /opt/ottochain"
             scp ${{ env.COMPOSE_FILE }} ${HOST}:/opt/ottochain/docker-compose.yml
 
-            # Write .env
+            # Write .env — public IP for CL_EXTERNAL_IP, private IPs for peer connections
             ssh $HOST "cat > /opt/ottochain/.env << 'ENVEOF'
 # OttoChain Node ${NUM} — auto-generated by deploy workflow
 IMAGE=${{ env.IMAGE }}:${{ env.IMAGE_TAG }}
-EXTERNAL_IP=${IP}
-NODE1_IP=${NODE1_IP}
+EXTERNAL_IP=${PUBLIC_IP}
+NODE1_IP=${NODE1_PRIV}
 IS_INITIAL=${IS_INITIAL}
 KEYS_DIR=/opt/ottochain/${KEYS}
 CL_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }}
 GL0_PEER_ID=${GL0_PEER_ID}
 ML0_PEER_ID=${ML0_PEER_ID}
 TOKEN_ID=${TOKEN_ID}
-GL0_JAVA_OPTS=-Xmx3g -Xms2g -XX:+UseZGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:ReservedCodeCacheSize=128m -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:SoftRefLRUPolicyMSPerMB=50 -XX:ZUncommitDelay=60 -Dlogback.configurationFile=/ottochain/logback.xml
-ML0_JAVA_OPTS=-Xmx4g -Xms2g -XX:+UseZGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:ReservedCodeCacheSize=128m -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:SoftRefLRUPolicyMSPerMB=50 -XX:ZUncommitDelay=60 -Dlogback.configurationFile=/ottochain/logback.xml
-DL1_JAVA_OPTS=-Xmx3g -Xms1g -XX:+UseZGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:ReservedCodeCacheSize=128m -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:SoftRefLRUPolicyMSPerMB=50 -XX:ZUncommitDelay=60 -Dlogback.configurationFile=/ottochain/logback.xml
-CL1_JAVA_OPTS=-Xmx2g -Xms1g -XX:+UseZGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:ReservedCodeCacheSize=128m -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:SoftRefLRUPolicyMSPerMB=50 -XX:ZUncommitDelay=60 -Dlogback.configurationFile=/ottochain/logback.xml
+LOKI_URL=http://${SERVICES_PRIV}:3100
+GL0_JAVA_OPTS=-Xmx3g -Xms2g ${JVM_COMMON}
+ML0_JAVA_OPTS=-Xmx4g -Xms2g ${JVM_COMMON}
+DL1_JAVA_OPTS=-Xmx3g -Xms1g ${JVM_COMMON}
+CL1_JAVA_OPTS=-Xmx2g -Xms1g ${JVM_COMMON}
 ENVEOF"
-            echo "✓ $HOST: compose + .env deployed"
+            echo "✓ $HOST deployed (IS_INITIAL=${IS_INITIAL:-false})"
           done
 
-      # ── GL0: Start on all nodes, form cluster ──────────────────────────
+      - name: Deploy promtail config
+        run: |
+          SERVICES_PRIV="${{ secrets.HETZNER_SERVICES_PRIVATE_IP }}"
+          for host in node1 node2 node3; do
+            ssh $host "cat > /opt/ottochain/promtail.yml << 'EOF'
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://${SERVICES_PRIV}:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: 'container'
+      - source_labels: ['__meta_docker_container_log_stream']
+        target_label: 'stream'
+EOF"
+            echo "✓ $host promtail config deployed"
+          done
+
+      # ── GL0 ────────────────────────────────────────────────────────────
 
       - name: Start GL0 on all nodes
         run: |
           for host in node1 node2 node3; do
             ssh $host "cd /opt/ottochain && docker compose up -d gl0"
           done
-          echo "✓ GL0 started on all nodes"
 
       - name: Wait for GL0 genesis Ready
         uses: ./.github/actions/wait-for-node-ready
@@ -407,7 +474,7 @@ ENVEOF"
           peer_ip: ${{ secrets.HETZNER_NODE1_IP }}
           layer_name: GL0
 
-      - name: Wait for GL0 cluster size
+      - name: Wait for GL0 cluster
         uses: ./.github/actions/wait-for-cluster-size
         with:
           ssh_host: node1
@@ -415,32 +482,20 @@ ENVEOF"
           layer_name: GL0
           expected_size: '3'
 
-      - name: Verify GL0 cluster Ready
+      - name: Verify GL0 Ready
         uses: ./.github/actions/verify-cluster-ready
         with:
           hosts: 'node1 node2 node3'
           port: '9000'
           layer_name: GL0
 
-      # ── GL1 (optional) ────────────────────────────────────────────────
-
-      - name: Start GL1 on all nodes
-        if: ${{ inputs.enable_gl1 == true }}
-        run: |
-          for host in node1 node2 node3; do
-            ssh $host "cd /opt/ottochain && docker compose --profile gl1 up -d gl1"
-          done
-
-      # TODO: GL1 join + cluster verification (if enabled)
-
-      # ── ML0: Start on all nodes, form cluster ──────────────────────────
+      # ── ML0 ────────────────────────────────────────────────────────────
 
       - name: Start ML0 on all nodes
         run: |
           for host in node1 node2 node3; do
             ssh $host "cd /opt/ottochain && docker compose up -d ml0"
           done
-          echo "✓ ML0 started on all nodes"
 
       - name: Wait for ML0 genesis Ready
         uses: ./.github/actions/wait-for-node-ready
@@ -461,7 +516,7 @@ ENVEOF"
           peer_ip: ${{ secrets.HETZNER_NODE1_IP }}
           layer_name: ML0
 
-      - name: Wait for ML0 cluster size
+      - name: Wait for ML0 cluster
         uses: ./.github/actions/wait-for-cluster-size
         with:
           ssh_host: node1
@@ -469,32 +524,20 @@ ENVEOF"
           layer_name: ML0
           expected_size: '3'
 
-      - name: Verify ML0 cluster Ready
+      - name: Verify ML0 Ready
         uses: ./.github/actions/verify-cluster-ready
         with:
           hosts: 'node1 node2 node3'
           port: '9200'
           layer_name: ML0
 
-      # ── CL1 (optional) ────────────────────────────────────────────────
-
-      - name: Start CL1 on all nodes
-        if: ${{ inputs.enable_cl1 == true }}
-        run: |
-          for host in node1 node2 node3; do
-            ssh $host "cd /opt/ottochain && docker compose --profile cl1 up -d cl1"
-          done
-
-      # TODO: CL1 join + cluster verification (if enabled)
-
-      # ── DL1: Start on all nodes, form cluster ──────────────────────────
+      # ── DL1 ────────────────────────────────────────────────────────────
 
       - name: Start DL1 on all nodes
         run: |
           for host in node1 node2 node3; do
             ssh $host "cd /opt/ottochain && docker compose up -d dl1"
           done
-          echo "✓ DL1 started on all nodes"
 
       - name: Wait for DL1 genesis Ready
         uses: ./.github/actions/wait-for-node-ready
@@ -515,7 +558,7 @@ ENVEOF"
           peer_ip: ${{ secrets.HETZNER_NODE1_IP }}
           layer_name: DL1
 
-      - name: Wait for DL1 cluster size
+      - name: Wait for DL1 cluster
         uses: ./.github/actions/wait-for-cluster-size
         with:
           ssh_host: node1
@@ -523,7 +566,7 @@ ENVEOF"
           layer_name: DL1
           expected_size: '3'
 
-      - name: Verify DL1 cluster Ready
+      - name: Verify DL1 Ready
         uses: ./.github/actions/verify-cluster-ready
         with:
           hosts: 'node1 node2 node3'
@@ -532,12 +575,11 @@ ENVEOF"
 
       # ── Infrastructure ─────────────────────────────────────────────────
 
-      - name: Start infrastructure containers
+      - name: Start infrastructure
         run: |
           for host in node1 node2 node3; do
             ssh $host "cd /opt/ottochain && docker compose up -d node-exporter promtail"
           done
-          echo "✓ Infrastructure containers started"
 
   # ── Health Check ───────────────────────────────────────────────────────
   health-check:
@@ -560,23 +602,18 @@ ENVEOF"
           node3_ip: ${{ secrets.HETZNER_NODE3_IP }}
           hosts: nodes
 
-      - name: Check all layers
+      - name: Check all layers on all nodes
         run: |
           echo "=== OttoChain Cluster Health ==="
           FAILED=0
 
-          LAYERS="gl0 ml0 dl1"
-          if [ "${{ inputs.enable_gl1 }}" = "true" ]; then LAYERS="gl0 gl1 ml0 dl1"; fi
-          if [ "${{ inputs.enable_cl1 }}" = "true" ]; then LAYERS="gl0 ml0 cl1 dl1"; fi
-
-          for layer in $LAYERS; do
-            case $layer in
-              gl0) port=9000 ;; gl1) port=9100 ;; ml0) port=9200 ;; cl1) port=9300 ;; dl1) port=9400 ;;
-            esac
+          for layer_port in "gl0:9000" "ml0:9200" "dl1:9400"; do
+            layer="${layer_port%%:*}"
+            port="${layer_port##*:}"
             for host in node1 node2 node3; do
               state=$(ssh $host "curl -sf http://localhost:$port/node/info | jq -r .state" 2>/dev/null || echo "DOWN")
               STATUS="✅"; [ "$state" != "Ready" ] && STATUS="❌" && FAILED=$((FAILED + 1))
-              echo "$STATUS $host $layer: $state"
+              echo "$STATUS $host ${layer^^}: $state"
             done
           done
 
@@ -584,10 +621,9 @@ ENVEOF"
 
       - name: Verify peer ID uniqueness
         run: |
-          echo "=== Verifying unique peer IDs ==="
-          DL1_1=$(ssh node1 "curl -sf http://localhost:9400/node/info | jq -r .id" || echo "error")
-          DL1_2=$(ssh node2 "curl -sf http://localhost:9400/node/info | jq -r .id" || echo "error")
-          DL1_3=$(ssh node3 "curl -sf http://localhost:9400/node/info | jq -r .id" || echo "error")
+          DL1_1=$(ssh node1 "curl -sf http://localhost:9400/node/info | jq -r .id" || echo "e1")
+          DL1_2=$(ssh node2 "curl -sf http://localhost:9400/node/info | jq -r .id" || echo "e2")
+          DL1_3=$(ssh node3 "curl -sf http://localhost:9400/node/info | jq -r .id" || echo "e3")
 
           if [ "$DL1_1" = "$DL1_2" ] || [ "$DL1_1" = "$DL1_3" ] || [ "$DL1_2" = "$DL1_3" ]; then
             echo "::error::DL1 nodes have DUPLICATE peer IDs!"
@@ -602,18 +638,16 @@ ENVEOF"
           echo "**Image**: \`${{ env.IMAGE }}:${{ env.IMAGE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Environment**: \`${{ inputs.environment || 'scratch' }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Node | Layer | Port | State |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|-------|------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Node | Layer | State |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|-------|" >> $GITHUB_STEP_SUMMARY
 
-          LAYERS="gl0 ml0 dl1"
-          for layer in $LAYERS; do
-            case $layer in
-              gl0) port=9000 ;; ml0) port=9200 ;; dl1) port=9400 ;;
-            esac
+          for layer_port in "gl0:9000" "ml0:9200" "dl1:9400"; do
+            layer="${layer_port%%:*}"
+            port="${layer_port##*:}"
             for host in node1 node2 node3; do
               state=$(ssh $host "curl -sf http://localhost:$port/node/info | jq -r .state" 2>/dev/null || echo "?")
               ICON="✅"; [ "$state" != "Ready" ] && ICON="❌"
-              echo "| $host | $ICON ${layer^^} | $port | $state |" >> $GITHUB_STEP_SUMMARY
+              echo "| $host | $ICON ${layer^^} | $state |" >> $GITHUB_STEP_SUMMARY
             done
           done
 
