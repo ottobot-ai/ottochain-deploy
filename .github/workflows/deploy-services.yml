@@ -486,6 +486,10 @@ jobs:
           ln -sf /etc/nginx/sites-available/ottochain /etc/nginx/sites-enabled/ottochain
           NGINX_SCRIPT
 
+          # Deploy nginx snippets (scanner blocking, etc.)
+          ssh services "mkdir -p /etc/nginx/snippets"
+          scp nginx/snippets/*.conf services:/etc/nginx/snippets/
+
           # Deploy all nginx configs from templates (with SSL)
           for site in bridge.ottochain.ai explorer.ottochain.ai status.ottochain.ai grafana.ottochain.ai prometheus.ottochain.ai; do
             scp nginx/${site}.conf services:/etc/nginx/sites-available/${site}
