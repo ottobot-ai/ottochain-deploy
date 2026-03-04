@@ -14,7 +14,8 @@
 │  │  │  gateway (:4000)     GraphQL API                      │  │    │
 │  │  │  bridge  (:3030)     Metagraph relay, key management  │  │    │
 │  │  │  indexer (:3031)     ML0 snapshot indexer → Postgres   │  │    │
-│  │  │  status  (:3032)     Status dashboard API              │  │    │
+│  │  │  status  (:3032)     Polls nodes, caches in Redis,     │  │    │
+│  │  │                      serves /api/status, app alerts    │  │    │
 │  │  │  traffic-gen         Load generator (bridge → DL1)     │  │    │
 │  │  │  explorer (:8081)    Block explorer frontend           │  │    │
 │  │  └───────────────────────────────────────────────────────┘  │    │
@@ -25,10 +26,11 @@
 │  │  └───────────────────────────────────────────────────────┘  │    │
 │  │                                                              │    │
 │  │  ┌─── Watchdog ─────────────────────────────────────────┐   │    │
-│  │  │  watchdog            Health checks + automated        │  │    │
-│  │  │                      restart via SSH to metagraph     │  │    │
-│  │  │                      nodes (run-rollback only,        │  │    │
-│  │  │                      never genesis)                   │  │    │
+│  │  │  watchdog            Reads health data from Redis     │  │    │
+│  │  │                      (written by Status). Evaluates   │  │    │
+│  │  │                      conditions, restarts layers via  │  │    │
+│  │  │                      SSH (run-rollback only, NEVER    │  │    │
+│  │  │                      genesis).                        │  │    │
 │  │  │                      Managed layers: GL0, ML0, DL1    │  │    │
 │  │  │                      3 consecutive failures → suspend │  │    │
 │  │  └───────────────────────────────────────────────────────┘  │    │
@@ -55,19 +57,26 @@
 │    prometheus.ottochain.ai → :9090                                  │
 └─────────────────────────────────────────────────────────────────────┘
 
+                    Hetzner Private Network (10.0.0.0/16)
 ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
-│  NODE 1 (5.78.90.207)│  │  NODE 2 (5.78.113.25)│  │  NODE 3 (5.78.107.77)│
+│  NODE 1              │  │  NODE 2              │  │  NODE 3              │
+│  pub: 5.78.90.207    │  │  pub: 5.78.113.25    │  │  pub: 5.78.107.77    │
+│  priv: 10.0.0.4      │  │  priv: 10.0.0.2      │  │  priv: 10.0.0.3      │
 │                      │  │                      │  │                      │
 │  gl0 (:9000/:9001)   │  │  gl0 (:9000/:9001)   │  │  gl0 (:9000/:9001)   │
 │  ml0 (:9200/:9201)   │  │  ml0 (:9200/:9201)   │  │  ml0 (:9200/:9201)   │
 │  dl1 (:9400/:9401)   │  │  dl1 (:9400/:9401)   │  │  dl1 (:9400/:9401)   │
-│  node-exporter(:9100)│  │  node-exporter(:9100)│  │  node-exporter(:9100)│
+│  node-exporter(:9500)│  │  node-exporter(:9500)│  │  node-exporter(:9500)│
 │  promtail            │  │  promtail            │  │  promtail            │
 │                      │  │                      │  │                      │
 │  /opt/ottochain/     │  │  /opt/ottochain/     │  │  /opt/ottochain/     │
-│    keys/             │  │    keys3/            │  │    keys6/            │
-│    genesis/          │  │                      │  │                      │
+│    keys/ (genesis)   │  │    keys2/            │  │    keys3/            │
+│    genesis/          │  │    genesis/           │  │    genesis/           │
 └──────────────────────┘  └──────────────────────┘  └──────────────────────┘
+
+Inter-node traffic (P2P, cluster join, Prometheus scrape, Promtail→Loki)
+uses private IPs. CL_EXTERNAL_IP = public IP for external peer visibility.
+Genesis runs in CI — nodes cannot create genesis.
 ```
 
 ## Data Flow
@@ -79,25 +88,37 @@ Users → nginx (SSL) → gateway (:4000) → GraphQL queries
 
 Indexer polls ML0 snapshots → processes → writes to Postgres
 Bridge relays signed transactions → fan-out to all DL1 nodes
+Status polls all nodes (HTTP) → caches in Redis → serves /api/status
+Watchdog reads Redis → evaluates conditions → SSH restart if needed
 
 Traffic-gen → bridge → DL1 (synthetic load for testing)
 ```
 
-## Watchdog Flow
+## Health & Restart Flow
 
 ```
-watchdog ─── HTTP poll ──→ GL0/ML0/DL1 on all 3 nodes (every 60s)
+Status (polls nodes) ──→ HTTP every 60s ──→ GL0/ML0/DL1 on all 3 nodes
+         │                                  (also checks public accessibility)
+         ├── Caches results in Redis
+         ├── Serves /api/status dashboard
+         └── Sends app-level alerts (node down, snapshot stall)
+
+Watchdog (reads Redis) ──→ Evaluates conditions from cached health data
+         │                  (does NOT poll nodes directly)
          │
          ├── Healthy? → log, continue
          │
-         ├── Stall detected? → SSH to affected node
-         │                     → docker start <layer> (run-rollback)
-         │                     → wait 180s for Ready
-         │                     → verify recovery
+         ├── Condition triggered? → SSH to affected node
+         │                         → docker compose restart <layer>
+         │                         → wait 180s for Ready
+         │                         → verify recovery
          │
          └── 3 consecutive failures? → SUSPEND automatic restarts
-                                     → alert via Telegram
                                      → auto-resume when health recovers
+
+Alertmanager ──→ Infrastructure alerts from Prometheus
+              → Disk, memory, CPU thresholds
+              → Routes to Telegram
 ```
 
 ## Monitoring Flow
@@ -127,7 +148,7 @@ Loki → Grafana log explorer
 | 9090 | Prometheus | Public (via nginx SSL) |
 | 5432 | Postgres | localhost only |
 | 6379 | Redis | localhost only |
-| 3100 | Loki | 0.0.0.0 (metagraph nodes push logs) |
+| 3100 | Loki | Private network (metagraph nodes push via 10.x) |
 | 9093 | Alertmanager | Internal |
 | 9000 | GL0 (public API) | All nodes |
 | 9001 | GL0 (P2P) | All nodes |
