@@ -255,15 +255,17 @@ jobs:
                   labels: { node: 'node3' }
               metrics_path: /metrics
 
-            - job_name: 'cl1'
-              static_configs:
-                - targets: ['${NODE1_IP}:9300']
-                  labels: { node: 'node1' }
-                - targets: ['${NODE2_IP}:9300']
-                  labels: { node: 'node2' }
-                - targets: ['${NODE3_IP}:9300']
-                  labels: { node: 'node3' }
-              metrics_path: /metrics
+            # CL1 scraping disabled — layer not deployed in minimal config
+            # Uncomment when enable_cl1 is used:
+            # - job_name: 'cl1'
+            #   static_configs:
+            #     - targets: ['${NODE1_IP}:9300']
+            #       labels: { node: 'node1' }
+            #     - targets: ['${NODE2_IP}:9300']
+            #       labels: { node: 'node2' }
+            #     - targets: ['${NODE3_IP}:9300']
+            #       labels: { node: 'node3' }
+            #   metrics_path: /metrics
 
             - job_name: 'dl1'
               static_configs:
@@ -332,7 +334,7 @@ jobs:
                 - record: ottochain:jvm_heap_usage_percent
                   expr: 100 * (jvm_memory_bytes_used{area="heap"} / jvm_memory_bytes_max{area="heap"})
                 - record: ottochain:all_nodes_up
-                  expr: min(up{job=~"gl0|ml0|cl1|dl1"})
+                  expr: min(up{job=~"gl0|ml0|dl1"})
           RULES_EOF
 
       - name: Write alert rules
@@ -343,7 +345,7 @@ jobs:
             - name: tessellation-nodes
               rules:
                 - alert: NodeDown
-                  expr: up{job=~"gl0|ml0|cl1|dl1"} == 0
+                  expr: up{job=~"gl0|ml0|dl1"} == 0
                   for: 1m
                   labels:
                     severity: critical

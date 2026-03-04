@@ -33,6 +33,11 @@ on:
         required: false
         default: false
         type: boolean
+      enable_cl1:
+        description: 'Enable CL1 (Currency L1) layer'
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       environment:
@@ -47,6 +52,8 @@ on:
         type: string
         default: 'latest'
       enable_gl1:
+        required: false
+      enable_cl1:
         required: false
         type: boolean
         default: false
@@ -262,7 +269,7 @@ jobs:
             -e CL_KEYSTORE=/ottochain/keys/key.p12 \
             -e CL_KEYALIAS=alias \
             -e CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
-            -e JAVA_OPTS='-Xmx3g -Xms2g -XX:+UseZGC -Dlogback.configurationFile=/ottochain/logback.xml' \
+            -e JAVA_OPTS='-Xmx3g -Xms2g -XX:+UseZGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:ReservedCodeCacheSize=128m -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:SoftRefLRUPolicyMSPerMB=50 -XX:ZUncommitDelay=60 -Dlogback.configurationFile=/ottochain/logback.xml' \
             ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
 
       - name: Wait for GL0 to be Ready
@@ -303,7 +310,7 @@ jobs:
               -e CL_EXTERNAL_IP=${IP} \
               -e CL_COLLATERAL=0 \
               -e CL_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }} \
-              -e JAVA_OPTS='-Xmx3g -Xms2g -XX:+UseZGC -Dlogback.configurationFile=/ottochain/logback.xml' \
+              -e JAVA_OPTS='-Xmx3g -Xms2g -XX:+UseZGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:ReservedCodeCacheSize=128m -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:SoftRefLRUPolicyMSPerMB=50 -XX:ZUncommitDelay=60 -Dlogback.configurationFile=/ottochain/logback.xml' \
               ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
           done
 
@@ -362,7 +369,7 @@ jobs:
             -e CL_L0_PEER_HOST=${NODE1_IP} \
             -e CL_L0_PEER_PORT=9000 \
             -e CL_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }} \
-            -e JAVA_OPTS="-Xmx2g -Xms1g -XX:+UseZGC -Dlogback.configurationFile=/ottochain/logback.xml" \
+            -e JAVA_OPTS="-Xmx2g -Xms1g -XX:+UseZGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:ReservedCodeCacheSize=128m -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:SoftRefLRUPolicyMSPerMB=50 -XX:ZUncommitDelay=60 -Dlogback.configurationFile=/ottochain/logback.xml" \
             ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}
           EOF
 
@@ -398,7 +405,7 @@ jobs:
               -e CL_L0_PEER_HOST=${NODE1_IP} \
               -e CL_L0_PEER_PORT=9000 \
               -e CL_PASSWORD=${{ secrets.CL_KEYSTORE_PASSWORD }} \
-              -e JAVA_OPTS='-Xmx2g -Xms1g -XX:+UseZGC -Dlogback.configurationFile=/ottochain/logback.xml' \
+              -e JAVA_OPTS='-Xmx2g -Xms1g -XX:+UseZGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:ReservedCodeCacheSize=128m -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:SoftRefLRUPolicyMSPerMB=50 -XX:ZUncommitDelay=60 -Dlogback.configurationFile=/ottochain/logback.xml' \
               ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
           done
 
@@ -536,7 +543,7 @@ jobs:
             -e CL_PUBLIC_HTTP_PORT=9200 \
             -e CL_P2P_HTTP_PORT=9201 \
             -e CL_CLI_HTTP_PORT=9202 \
-            -e JAVA_OPTS='-Xmx4g -Xms2g -XX:+UseZGC -Dlogback.configurationFile=/ottochain/logback.xml' \
+            -e JAVA_OPTS='-Xmx4g -Xms2g -XX:+UseZGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:ReservedCodeCacheSize=128m -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:SoftRefLRUPolicyMSPerMB=50 -XX:ZUncommitDelay=60 -Dlogback.configurationFile=/ottochain/logback.xml' \
             ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
 
       - name: Wait for ML0 to be Ready
@@ -603,7 +610,7 @@ jobs:
               -e CL_P2P_HTTP_PORT=9201 \
               -e CL_CLI_HTTP_PORT=9202 \
               -e CL_TOKEN_ID=${TOKEN_ID} \
-              -e JAVA_OPTS='-Xmx4g -Xms2g -XX:+UseZGC -Dlogback.configurationFile=/ottochain/logback.xml' \
+              -e JAVA_OPTS='-Xmx4g -Xms2g -XX:+UseZGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:ReservedCodeCacheSize=128m -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:SoftRefLRUPolicyMSPerMB=50 -XX:ZUncommitDelay=60 -Dlogback.configurationFile=/ottochain/logback.xml' \
               ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
           done
 
@@ -636,6 +643,7 @@ jobs:
           layer_name: ML0
 
       - name: Start CL1
+        if: ${{ inputs.enable_cl1 == true }}
         run: |
           NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
           NODE2_IP="${{ secrets.HETZNER_NODE2_IP }}"
@@ -676,7 +684,7 @@ jobs:
             -e CL_PUBLIC_HTTP_PORT=9300 \
             -e CL_P2P_HTTP_PORT=9301 \
             -e CL_CLI_HTTP_PORT=9302 \
-            -e JAVA_OPTS='-Xmx2g -Xms1g -XX:+UseZGC -Dlogback.configurationFile=/ottochain/logback.xml' \
+            -e JAVA_OPTS='-Xmx2g -Xms1g -XX:+UseZGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:ReservedCodeCacheSize=128m -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:SoftRefLRUPolicyMSPerMB=50 -XX:ZUncommitDelay=60 -Dlogback.configurationFile=/ottochain/logback.xml' \
             ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
 
           for i in $(seq 1 60); do
@@ -724,7 +732,7 @@ jobs:
               -e CL_PUBLIC_HTTP_PORT=9300 \
               -e CL_P2P_HTTP_PORT=9301 \
               -e CL_CLI_HTTP_PORT=9302 \
-              -e JAVA_OPTS='-Xmx2g -Xms1g -XX:+UseZGC -Dlogback.configurationFile=/ottochain/logback.xml' \
+              -e JAVA_OPTS='-Xmx2g -Xms1g -XX:+UseZGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:ReservedCodeCacheSize=128m -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:SoftRefLRUPolicyMSPerMB=50 -XX:ZUncommitDelay=60 -Dlogback.configurationFile=/ottochain/logback.xml' \
               ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
           done
 
@@ -778,7 +786,7 @@ jobs:
             -e CL_PUBLIC_HTTP_PORT=9400 \
             -e CL_P2P_HTTP_PORT=9401 \
             -e CL_CLI_HTTP_PORT=9402 \
-            -e JAVA_OPTS='-Xmx3g -Xms1g -XX:+UseZGC -Dlogback.configurationFile=/ottochain/logback.xml' \
+            -e JAVA_OPTS='-Xmx3g -Xms1g -XX:+UseZGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:ReservedCodeCacheSize=128m -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:SoftRefLRUPolicyMSPerMB=50 -XX:ZUncommitDelay=60 -Dlogback.configurationFile=/ottochain/logback.xml' \
             ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
 
           for i in $(seq 1 60); do
@@ -826,7 +834,7 @@ jobs:
               -e CL_PUBLIC_HTTP_PORT=9400 \
               -e CL_P2P_HTTP_PORT=9401 \
               -e CL_CLI_HTTP_PORT=9402 \
-              -e JAVA_OPTS='-Xmx3g -Xms1g -XX:+UseZGC -Dlogback.configurationFile=/ottochain/logback.xml' \
+              -e JAVA_OPTS='-Xmx3g -Xms1g -XX:+UseZGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:ReservedCodeCacheSize=128m -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:SoftRefLRUPolicyMSPerMB=50 -XX:ZUncommitDelay=60 -Dlogback.configurationFile=/ottochain/logback.xml' \
               ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
           done
 
