@@ -183,8 +183,6 @@ jobs:
                 - "9187:9187"
               environment:
                 - DATA_SOURCE_NAME=postgresql://ottochain:$${POSTGRES_PASSWORD:-ottochain}@postgres:5432/ottochain?sslmode=disable
-              depends_on:
-                - prometheus
               networks:
                 - ottochain
 
@@ -196,8 +194,6 @@ jobs:
                 - "9121:9121"
               environment:
                 - REDIS_ADDR=redis://redis:6379
-              depends_on:
-                - prometheus
               networks:
                 - ottochain
 
