@@ -471,7 +471,7 @@ EOF"
           p2p_port: '9001'
           public_port: '9000'
           peer_id: ${{ needs.prepare.outputs.peer_id_1 }}
-          peer_ip: ${{ secrets.HETZNER_NODE1_IP }}
+          peer_ip: ${{ secrets.HETZNER_NODE1_PRIVATE_IP }}
           layer_name: GL0
 
       - name: Wait for GL0 cluster
@@ -513,7 +513,7 @@ EOF"
           p2p_port: '9201'
           public_port: '9200'
           peer_id: ${{ needs.prepare.outputs.peer_id_1 }}
-          peer_ip: ${{ secrets.HETZNER_NODE1_IP }}
+          peer_ip: ${{ secrets.HETZNER_NODE1_PRIVATE_IP }}
           layer_name: ML0
 
       - name: Wait for ML0 cluster
@@ -555,7 +555,7 @@ EOF"
           p2p_port: '9401'
           public_port: '9400'
           peer_id: ${{ needs.prepare.outputs.peer_id_1 }}
-          peer_ip: ${{ secrets.HETZNER_NODE1_IP }}
+          peer_ip: ${{ secrets.HETZNER_NODE1_PRIVATE_IP }}
           layer_name: DL1
 
       - name: Wait for DL1 cluster
