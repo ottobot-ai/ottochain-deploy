@@ -1,0 +1,174 @@
+# OttoChain Metagraph Node
+# Deployed to each metagraph node (node1, node2, node3)
+# Parameterized via .env — same compose file on every node
+#
+# Layers are started/stopped via profiles:
+#   docker compose up -d                    # start enabled layers
+#   docker compose --profile cl1 up -d cl1  # start optional CL1
+
+services:
+
+  gl0:
+    image: ${IMAGE}
+    container_name: gl0
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+      - "9002:9002"
+    volumes:
+      - ${KEYS_DIR}:/ottochain/keys:ro
+      - /opt/ottochain/gl0-data:/ottochain/data
+      - /opt/ottochain/gl0-logs:/ottochain/logs
+      - /opt/ottochain/logback.xml:/ottochain/logback.xml:ro
+      - /opt/ottochain/genesis:/ottochain/genesis:ro
+    environment:
+      - LAYER=gl0
+      - IS_INITIAL=${IS_INITIAL:-}
+      - CL_APP_ENV=dev
+      - CL_EXTERNAL_IP=${EXTERNAL_IP}
+      - CL_COLLATERAL=0
+      - CL_KEYSTORE=/ottochain/keys/key.p12
+      - CL_KEYALIAS=alias
+      - CL_PASSWORD=${CL_PASSWORD}
+      - JAVA_OPTS=${GL0_JAVA_OPTS:--Xmx3g -Xms2g -XX:+UseZGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:ReservedCodeCacheSize=128m -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:SoftRefLRUPolicyMSPerMB=50 -XX:ZUncommitDelay=60 -Dlogback.configurationFile=/ottochain/logback.xml}
+
+  ml0:
+    image: ${IMAGE}
+    container_name: ml0
+    restart: unless-stopped
+    ports:
+      - "9200:9200"
+      - "9201:9201"
+      - "9202:9202"
+    volumes:
+      - ${KEYS_DIR}:/ottochain/keys:ro
+      - /opt/ottochain/ml0-data:/ottochain/data
+      - /opt/ottochain/ml0-logs:/ottochain/logs
+      - /opt/ottochain/logback.xml:/ottochain/logback.xml:ro
+      - /opt/ottochain/genesis:/ottochain/genesis:ro
+    environment:
+      - LAYER=ml0
+      - IS_INITIAL=${IS_INITIAL:-}
+      - CL_APP_ENV=dev
+      - CL_EXTERNAL_IP=${EXTERNAL_IP}
+      - CL_COLLATERAL=0
+      - CL_KEYSTORE=/ottochain/keys/key.p12
+      - CL_KEYALIAS=alias
+      - CL_PASSWORD=${CL_PASSWORD}
+      - CL_GLOBAL_L0_PEER_ID=${GL0_PEER_ID}
+      - CL_GLOBAL_L0_PEER_HOST=${NODE1_IP}
+      - CL_GLOBAL_L0_PEER_PORT=9000
+      - CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP}
+      - CL_GLOBAL_L0_PEER_HTTP_PORT=9000
+      - CL_PUBLIC_HTTP_PORT=9200
+      - CL_P2P_HTTP_PORT=9201
+      - CL_CLI_HTTP_PORT=9202
+      - CL_TOKEN_ID=${TOKEN_ID:-}
+      - JAVA_OPTS=${ML0_JAVA_OPTS:--Xmx4g -Xms2g -XX:+UseZGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:ReservedCodeCacheSize=128m -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:SoftRefLRUPolicyMSPerMB=50 -XX:ZUncommitDelay=60 -Dlogback.configurationFile=/ottochain/logback.xml}
+
+  dl1:
+    image: ${IMAGE}
+    container_name: dl1
+    restart: unless-stopped
+    ports:
+      - "9400:9400"
+      - "9401:9401"
+      - "9402:9402"
+    volumes:
+      - ${KEYS_DIR}:/ottochain/keys:ro
+      - /opt/ottochain/dl1-data:/ottochain/data
+      - /opt/ottochain/dl1-logs:/ottochain/logs
+      - /opt/ottochain/logback.xml:/ottochain/logback.xml:ro
+    environment:
+      - LAYER=dl1
+      - IS_INITIAL=${IS_INITIAL:-}
+      - CL_APP_ENV=dev
+      - CL_EXTERNAL_IP=${EXTERNAL_IP}
+      - CL_COLLATERAL=0
+      - CL_KEYSTORE=/ottochain/keys/key.p12
+      - CL_KEYALIAS=alias
+      - CL_PASSWORD=${CL_PASSWORD}
+      - CL_GLOBAL_L0_PEER_ID=${GL0_PEER_ID}
+      - CL_GLOBAL_L0_PEER_HOST=${NODE1_IP}
+      - CL_GLOBAL_L0_PEER_PORT=9000
+      - CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP}
+      - CL_GLOBAL_L0_PEER_HTTP_PORT=9000
+      - CL_L0_PEER_ID=${ML0_PEER_ID}
+      - CL_L0_PEER_HOST=${NODE1_IP}
+      - CL_L0_PEER_PORT=9200
+      - CL_L0_PEER_HTTP_HOST=${NODE1_IP}
+      - CL_L0_PEER_HTTP_PORT=9200
+      - CL_L0_TOKEN_IDENTIFIER=${TOKEN_ID:-}
+      - CL_PUBLIC_HTTP_PORT=9400
+      - CL_P2P_HTTP_PORT=9401
+      - CL_CLI_HTTP_PORT=9402
+      - JAVA_OPTS=${DL1_JAVA_OPTS:--Xmx3g -Xms1g -XX:+UseZGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:ReservedCodeCacheSize=128m -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:SoftRefLRUPolicyMSPerMB=50 -XX:ZUncommitDelay=60 -Dlogback.configurationFile=/ottochain/logback.xml}
+
+  # ── Optional layers ──────────────────────────────────────────────
+
+  cl1:
+    image: ${IMAGE}
+    container_name: cl1
+    restart: unless-stopped
+    profiles: ["cl1"]
+    ports:
+      - "9300:9300"
+      - "9301:9301"
+      - "9302:9302"
+    volumes:
+      - ${KEYS_DIR}:/ottochain/keys:ro
+      - /opt/ottochain/cl1-data:/ottochain/data
+      - /opt/ottochain/cl1-logs:/ottochain/logs
+      - /opt/ottochain/logback.xml:/ottochain/logback.xml:ro
+    environment:
+      - LAYER=cl1
+      - IS_INITIAL=${IS_INITIAL:-}
+      - CL_APP_ENV=dev
+      - CL_EXTERNAL_IP=${EXTERNAL_IP}
+      - CL_COLLATERAL=0
+      - CL_KEYSTORE=/ottochain/keys/key.p12
+      - CL_KEYALIAS=alias
+      - CL_PASSWORD=${CL_PASSWORD}
+      - CL_GLOBAL_L0_PEER_ID=${GL0_PEER_ID}
+      - CL_GLOBAL_L0_PEER_HOST=${NODE1_IP}
+      - CL_GLOBAL_L0_PEER_PORT=9000
+      - CL_GLOBAL_L0_PEER_HTTP_HOST=${NODE1_IP}
+      - CL_GLOBAL_L0_PEER_HTTP_PORT=9000
+      - CL_L0_PEER_ID=${ML0_PEER_ID}
+      - CL_L0_PEER_HOST=${NODE1_IP}
+      - CL_L0_PEER_PORT=9200
+      - CL_L0_PEER_HTTP_HOST=${NODE1_IP}
+      - CL_L0_PEER_HTTP_PORT=9200
+      - CL_L0_TOKEN_IDENTIFIER=${TOKEN_ID:-}
+      - CL_PUBLIC_HTTP_PORT=9300
+      - CL_P2P_HTTP_PORT=9301
+      - CL_CLI_HTTP_PORT=9302
+      - JAVA_OPTS=${CL1_JAVA_OPTS:--Xmx2g -Xms1g -XX:+UseZGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:ReservedCodeCacheSize=128m -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:SoftRefLRUPolicyMSPerMB=50 -XX:ZUncommitDelay=60 -Dlogback.configurationFile=/ottochain/logback.xml}
+
+  # ── Infrastructure ───────────────────────────────────────────────
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    ports:
+      - "9500:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+
+  promtail:
+    image: grafana/promtail:2.9.4
+    container_name: promtail
+    restart: unless-stopped
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /opt/ottochain/promtail.yml:/etc/promtail/config.yml:ro
+    command: -config.file=/etc/promtail/config.yml
