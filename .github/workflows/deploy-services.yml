@@ -367,7 +367,7 @@ jobs:
           GL0_URL=http://${METAGRAPH_IP}:9000
           GL1_URL=http://${METAGRAPH_IP}:9100
           ML0_URL=http://${METAGRAPH_IP}:9200
-          CL1_URL=http://${METAGRAPH_IP}:9300
+          # CL1_URL=http://${METAGRAPH_IP}:9300  # CL1 disabled in minimal config
           DL1_URL=http://${METAGRAPH_IP}:9400
 
           # Monitor URLs (plural - all nodes, used by status page)
