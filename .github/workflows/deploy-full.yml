@@ -53,6 +53,11 @@ on:
         required: false
         default: false
         type: boolean
+      enable_cl1:
+        description: 'Enable CL1 (Currency L1) layer'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   # Resolve versions from versions.yaml or inputs
@@ -157,6 +162,7 @@ jobs:
       wipe_state: ${{ inputs.wipe_state == true }}
       image_tag: ${{ needs.setup.outputs.metagraph_version }}
       enable_gl1: ${{ inputs.enable_gl1 == true }}
+      enable_cl1: ${{ inputs.enable_cl1 == true }}
     secrets: inherit
 
   # Deploy services (docker compose stack)

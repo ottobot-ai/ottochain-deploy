@@ -634,6 +634,7 @@ jobs:
           docker compose ps
           DEPLOY
 
+      - name: Deploy node exporters
         if: ${{ inputs.include_exporters == true }}
         run: |
           for host in node1 node2 node3; do
