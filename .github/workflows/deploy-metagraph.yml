@@ -99,8 +99,10 @@ jobs:
 
       - name: Download cl-wallet
         run: |
+          TESS_VERSION=$(grep -A1 'tessellation:' versions.yaml | grep 'version:' | sed 's/.*"\(.*\)"/\1/')
+          echo "Tessellation version: $TESS_VERSION"
           curl -sL -o cl-wallet.jar \
-            https://github.com/Constellation-Labs/tessellation/releases/download/v4.0.0-rc.2/cl-wallet.jar
+            "https://github.com/Constellation-Labs/tessellation/releases/download/v${TESS_VERSION}/cl-wallet.jar"
 
       - name: Decode keystores
         run: |
@@ -194,8 +196,9 @@ jobs:
 
           # Double fallback: use setup-java + downloaded cl-wallet
           if [ -z "$WALLET" ]; then
+            TESS_VERSION=$(grep -A1 'tessellation:' versions.yaml | grep 'version:' | sed 's/.*"\(.*\)"/\1/')
             curl -sL -o cl-wallet.jar \
-              https://github.com/Constellation-Labs/tessellation/releases/download/v4.0.0-rc.2/cl-wallet.jar
+              "https://github.com/Constellation-Labs/tessellation/releases/download/v${TESS_VERSION}/cl-wallet.jar"
             WALLET=$(CL_KEYSTORE=keys/key.p12 CL_KEYALIAS=alias \
               CL_PASSWORD='${{ secrets.CL_KEYSTORE_PASSWORD }}' \
               java -jar cl-wallet.jar show-address 2>&1 | grep -oP 'DAG[a-zA-Z0-9]+' | head -1)
