@@ -131,9 +131,9 @@ jobs:
               networks:
                 - ottochain
 
-            health-monitor:
+            watchdog:
               image: ghcr.io/ottobot-ai/ottochain-watchdog:latest
-              container_name: health-monitor
+              container_name: watchdog
               restart: unless-stopped
               env_file:
                 - .env
@@ -155,6 +155,45 @@ jobs:
               command: -config.file=/etc/promtail/config.yml
               depends_on:
                 - loki
+              networks:
+                - ottochain
+
+            node-exporter:
+              image: prom/node-exporter:latest
+              container_name: node-exporter
+              restart: unless-stopped
+              ports:
+                - "9100:9100"
+              volumes:
+                - /proc:/host/proc:ro
+                - /sys:/host/sys:ro
+                - /:/rootfs:ro
+              command:
+                - '--path.procfs=/host/proc'
+                - '--path.sysfs=/host/sys'
+                - '--path.rootfs=/rootfs'
+              networks:
+                - ottochain
+
+            postgres-exporter:
+              image: prometheuscommunity/postgres-exporter:latest
+              container_name: postgres-exporter
+              restart: unless-stopped
+              ports:
+                - "9187:9187"
+              environment:
+                - DATA_SOURCE_NAME=postgresql://ottochain:$${POSTGRES_PASSWORD:-ottochain}@postgres:5432/ottochain?sslmode=disable
+              networks:
+                - ottochain
+
+            redis-exporter:
+              image: oliver006/redis_exporter:latest
+              container_name: redis-exporter
+              restart: unless-stopped
+              ports:
+                - "9121:9121"
+              environment:
+                - REDIS_ADDR=redis://redis:6379
               networks:
                 - ottochain
 
@@ -649,7 +688,7 @@ jobs:
           alertmgr=$(ssh services "curl -sf -o /dev/null -w '%{http_code}' http://localhost:9093/-/healthy" || echo "000")
           echo "Alertmanager: HTTP $alertmgr"
           
-          monitor=$(ssh services "docker ps --filter name=health-monitor --format '{{.Status}}'" || echo "not running")
+          monitor=$(ssh services "docker ps --filter name=watchdog --format '{{.Status}}'" || echo "not running")
           echo "Health Monitor: $monitor"
 
           # Smoke test: verify Prometheus can reach scrape targets
