@@ -327,9 +327,32 @@ jobs:
 
       - name: Stop existing containers
         run: |
+          CONTAINERS="gl0 gl1 ml0 cl1 dl1 promtail node-exporter"
+
           for host in node1 node2 node3; do
-            ssh $host "cd /opt/ottochain && docker compose down 2>/dev/null || true"
-            ssh $host "docker rm -f gl0 gl1 ml0 cl1 dl1 promtail node-exporter 2>/dev/null || true"
+            echo "── Stopping containers on $host ──"
+
+            # Disable restart policies so containers don't respawn
+            for c in $CONTAINERS; do
+              ssh $host "docker update --restart no $c 2>/dev/null" || true
+            done
+
+            # Try graceful compose down (60s timeout)
+            ssh $host "timeout 60 bash -c 'cd /opt/ottochain && docker compose down 2>/dev/null'" || true
+
+            # Force remove individual containers (60s timeout)
+            ssh $host "timeout 60 docker rm -f $CONTAINERS 2>/dev/null" || true
+
+            # Verify containers are gone; if any remain, restart docker daemon as last resort
+            REMAINING=$(ssh $host "docker ps -q --filter name=gl0 --filter name=ml0 --filter name=dl1 2>/dev/null" || echo "")
+            if [ -n "$REMAINING" ]; then
+              echo "⚠️ $host: containers stuck — restarting docker daemon"
+              ssh $host "systemctl restart docker" || true
+              sleep 5
+              ssh $host "docker rm -f $CONTAINERS 2>/dev/null" || true
+            fi
+
+            echo "✅ $host clean"
           done
 
       - name: Wipe state (if genesis)

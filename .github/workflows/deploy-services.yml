@@ -868,18 +868,18 @@ jobs:
           pm2 delete all 2>/dev/null || true
           
           # Remove old monitor container and old watchdog stack
-          docker rm -f monitor health-monitor 2>/dev/null || true
+          timeout 60 docker rm -f monitor health-monitor 2>/dev/null || true
           
           # Shut down old separate watchdog stack if it exists
           if [ -f /opt/ottochain-watchdog/docker-compose.yml ]; then
             cd /opt/ottochain-watchdog
-            docker compose down --remove-orphans 2>/dev/null || true
+            timeout 60 docker compose down --remove-orphans 2>/dev/null || true
             cd /opt/ottochain-services
           fi
           
           # Pull all images and deploy unified stack
           docker compose pull
-          docker compose down --remove-orphans 2>/dev/null || true
+          timeout 120 docker compose down --remove-orphans 2>/dev/null || true
           docker compose up -d --force-recreate
           
           # Wait for postgres/redis to be ready
