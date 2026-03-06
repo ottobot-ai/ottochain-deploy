@@ -147,7 +147,6 @@ EOF
 else
   # Load existing .env
   source .env
-  GL0_PEER_ID="${GL0_PEER_ID}"
 fi
 
 # ── Start cluster ────────────────────────────────────────────────────────

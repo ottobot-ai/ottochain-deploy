@@ -1,0 +1,5 @@
+# Runtime-generated files — do not commit
+data/keys/
+data/genesis/
+data/tools/
+.env
