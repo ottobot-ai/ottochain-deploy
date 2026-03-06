@@ -1,0 +1,42 @@
+name: Validate Local Cluster
+
+on:
+  pull_request:
+    paths:
+      - 'test/local/**'
+
+jobs:
+  validate-compose:
+    name: Validate Compose Files
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Validate docker-compose.yml syntax
+        working-directory: test/local
+        run: |
+          echo "🐳 Validating docker-compose.yml..."
+          docker compose -f docker-compose.yml config --quiet
+          echo "✅ docker-compose.yml is valid"
+
+      - name: Validate compose-override.yml syntax
+        working-directory: test/local
+        run: |
+          echo "🐳 Validating compose-override.yml..."
+          docker compose -f compose-override.yml config --quiet
+          echo "✅ compose-override.yml is valid"
+
+      - name: Check setup.sh is executable and has no syntax errors
+        working-directory: test/local
+        run: |
+          echo "🔍 Checking setup.sh bash syntax..."
+          bash -n setup.sh
+          echo "✅ setup.sh syntax OK"
+
+      - name: Check entrypoint-fixed.sh bash syntax
+        working-directory: test/local
+        run: |
+          echo "🔍 Checking entrypoint-fixed.sh bash syntax..."
+          bash -n entrypoint-fixed.sh
+          echo "✅ entrypoint-fixed.sh syntax OK"
