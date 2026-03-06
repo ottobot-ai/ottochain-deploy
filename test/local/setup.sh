@@ -186,7 +186,7 @@ join_layer() {
     echo "  Joining ${layer}-${n}..."
     for j in $(seq 1 30); do
       state=$(docker exec "${layer}-${n}" wget -qO- "http://127.0.0.1:${cli_port}/node/info" 2>/dev/null | grep -o '"state":"[^"]*"' | cut -d'"' -f4 || echo "")
-      [ "$state" = "ReadyToJoin" ] || [ "$state" = "Ready" ] && break
+      { [ "$state" = "ReadyToJoin" ] || [ "$state" = "Ready" ]; } && break
       sleep 5
     done
     # Find peer ID for node1

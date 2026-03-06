@@ -1,6 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
+# ⚠️  LEGACY: Docker-in-Docker entry point (superseded by setup.sh)
+#
+# This script is the original DinD-based test harness. It is retained for
+# reference but is NOT the active entry point for this PR. Use setup.sh
+# for the plain-container approach (simpler, no nested Docker required).
+#
+# See also: PR #166 (feat/local-deploy-test) which this branch supersedes.
+#
 # Local Deploy Test — Docker-in-Docker
 #
 # Tests the metagraph deploy workflow locally against 3 DinD containers.
