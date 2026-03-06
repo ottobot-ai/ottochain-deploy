@@ -322,9 +322,9 @@ services:
     ports:
       - "8080:80"
     environment:
-      VITE_API_URL: http://100.84.70.75:4000
-      VITE_WS_URL: ws://100.84.70.75:4000
-      VITE_BRIDGE_URL: http://100.84.70.75:3030
+      VITE_API_URL: http://${HOST_IP:-localhost}:4000
+      VITE_WS_URL: ws://${HOST_IP:-localhost}:4000
+      VITE_BRIDGE_URL: http://${HOST_IP:-localhost}:3030
     depends_on: [gateway]
     networks:
       cluster:

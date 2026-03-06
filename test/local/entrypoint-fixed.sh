@@ -5,6 +5,11 @@ set -e
 # All 5 layers in one image for guaranteed compatibility.
 # LAYER env var selects which to run: gl0, gl1, ml0, cl1, dl1
 #
+# NOTE: This entrypoint is a workaround for a startup sequencing bug in image
+# versions <=0.7.9 that causes premature exit before the node is fully ready.
+# Workaround for: https://github.com/scasplte2/ottochain/issues/136
+# Remove this file and revert to the upstream entrypoint once image >0.7.9 is released.
+#
 # Smart run mode detection by layer type:
 #
 # L0 layers (GL0, ML0):

@@ -46,6 +46,13 @@ cd test/local
 docker compose down -v
 ```
 
+> **Remote access or WSL2?** If your Docker host is not `localhost` (e.g. running on a remote VM, WSL2, or another machine), set `HOST_IP` so the explorer can reach the API:
+> ```bash
+> export HOST_IP=192.168.1.100   # your Docker host IP
+> ./setup.sh
+> ```
+> Without `HOST_IP`, the explorer defaults to `localhost` (works for local Docker Desktop).
+
 ## What `setup.sh` Does
 
 1. Downloads `cl-keytool.jar` + `cl-wallet.jar` from tessellation releases
@@ -63,7 +70,8 @@ docker compose down -v
 |------|---------|
 | `docker-compose.yml` | All 17 container definitions, networks, static IPs |
 | `setup.sh` | Automated genesis + cluster bootstrap |
-| `entrypoint-fixed.sh` | Patched metagraph entrypoint (ML0 `--l0-token-identifier` fix for 0.7.9) |
+| `entrypoint-fixed.sh` | Patched metagraph entrypoint (workaround for image ≤0.7.9 startup bug — remove once >0.7.9 is released) |
+| `compose-override.yml` | **DinD-only override** — applies only if you're running Docker-in-Docker (see PR #166). Not needed for the plain Docker setup this PR introduces. |
 | `data/` | Generated at runtime: keys, genesis, tools (gitignored) |
 | `.env` | Generated at runtime: peer ID, token ID, image refs |
 
@@ -118,7 +126,8 @@ docker cp dist/. explorer:/usr/share/nginx/html/
 
 | Issue | Cause | Workaround |
 |-------|-------|------------|
-| ML0 crash: `Unexpected option` | Image 0.7.9 entrypoint bug | `entrypoint-fixed.sh` mounted in compose |
+| ML0 crash: `Unexpected option` | Image 0.7.9 entrypoint bug | `entrypoint-fixed.sh` mounted in compose (remove when image >0.7.9) |
+| Explorer can't reach API | `HOST_IP` not set for remote/WSL2 host | `export HOST_IP=<your-docker-host-ip>` before running setup |
 | Can't curl metagraph from host | Ports not mapped to host | Use `docker exec <c> wget -qO-` |
 | Explorer shows no data | Browser cached empty state | Hard refresh (Ctrl+Shift+R) |
 | Traffic gen `fetch failed` | `INDEXER_URL` not read | Set in compose env (PR #216) |
