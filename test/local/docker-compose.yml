@@ -1,0 +1,101 @@
+# Local Deploy Test Harness
+#
+# Simulates the 3-node Hetzner cluster using Docker-in-Docker containers.
+# Each "node" runs its own Docker daemon and can launch metagraph containers.
+#
+# Usage:
+#   cd test/local
+#   docker compose up -d
+#   ./run-deploy-test.sh [--image-tag 0.7.9] [--wipe]
+#   docker compose down -v
+
+services:
+  node1:
+    image: docker:27-dind
+    container_name: test-node1
+    privileged: true
+    environment:
+      - DOCKER_TLS_CERTDIR=  # disable TLS for simplicity
+    volumes:
+      - node1-data:/opt/ottochain
+      - node1-docker:/var/lib/docker
+    networks:
+      cluster:
+        ipv4_address: 172.28.0.11
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  node2:
+    image: docker:27-dind
+    container_name: test-node2
+    privileged: true
+    environment:
+      - DOCKER_TLS_CERTDIR=
+    volumes:
+      - node2-data:/opt/ottochain
+      - node2-docker:/var/lib/docker
+    networks:
+      cluster:
+        ipv4_address: 172.28.0.12
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  node3:
+    image: docker:27-dind
+    container_name: test-node3
+    privileged: true
+    environment:
+      - DOCKER_TLS_CERTDIR=
+    volumes:
+      - node3-data:/opt/ottochain
+      - node3-docker:/var/lib/docker
+    networks:
+      cluster:
+        ipv4_address: 172.28.0.13
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Runner simulates the GitHub Actions runner
+  runner:
+    image: docker:27-cli
+    container_name: test-runner
+    volumes:
+      - ./run-deploy-test.sh:/test/run-deploy-test.sh:ro
+      - ./ssh-config:/root/.ssh/config:ro
+      - runner-keys:/root/.ssh
+    networks:
+      cluster:
+        ipv4_address: 172.28.0.10
+    depends_on:
+      node1:
+        condition: service_healthy
+      node2:
+        condition: service_healthy
+      node3:
+        condition: service_healthy
+    entrypoint: ["sleep", "infinity"]
+
+volumes:
+  node1-data:
+  node1-docker:
+  node2-data:
+  node2-docker:
+  node3-data:
+  node3-docker:
+  runner-keys:
+
+networks:
+  cluster:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
