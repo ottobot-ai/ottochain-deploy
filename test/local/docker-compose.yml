@@ -308,6 +308,7 @@ services:
       REDIS_URL: redis://172.30.0.51:6379
       METAGRAPH_ML0_URL: http://172.30.0.21:9200
       GL0_URL: http://172.30.0.11:9000
+      METAGRAPH_ID: DAG0wQ6DQqqBQKXmcts43YCdfugXy3oxc2qvRNLQ
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
