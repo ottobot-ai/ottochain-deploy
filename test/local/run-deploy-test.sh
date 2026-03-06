@@ -39,8 +39,6 @@ FULL_IMAGE="${IMAGE}:${IMAGE_TAG}"
 
 node_docker() { local n="$1"; shift; docker exec "$n" docker "$@"; }
 node_exec()   { local n="$1"; shift; docker exec "$n" sh -c "$*"; }
-# Run command inside a container within a DinD node (for CLI port access)
-inner_exec()  { local n="$1"; local c="$2"; shift 2; docker exec "$n" docker exec "$c" sh -c "$*"; }
 step()        { echo ""; echo "═══ $1 ═══"; }
 FAILURES=0
 check_pass() { echo "  ✅ $1"; }
@@ -144,12 +142,16 @@ if [ "$SKIP_GENESIS" = "false" ]; then
     "$FULL_IMAGE" >/dev/null
 
   echo "  Waiting for GL0 Ready..."
+  GL0_READY=false
   for i in $(seq 1 60); do
     state=$(node_exec "${NODES[0]}" "wget -qO- http://127.0.0.1:9000/node/info 2>/dev/null" | grep -o '"state":"[^"]*"' | cut -d'"' -f4 || echo "")
-    if [ "$state" = "Ready" ]; then check_pass "GL0 Ready (${i}x5s)"; break; fi
-    [ "$i" = "60" ] && check_fail "GL0 timeout"
+    if [ "$state" = "Ready" ]; then check_pass "GL0 Ready (${i}x5s)"; GL0_READY=true; break; fi
     sleep 5
   done
+  if [ "$GL0_READY" = "false" ]; then
+    check_fail "GL0 timeout — cannot proceed to ML0 genesis without a ready GL0"
+    exit 1
+  fi
 
   step "ML0 genesis snapshot"
   # Run ML0 create-genesis against the running GL0
@@ -174,8 +176,15 @@ if [ "$SKIP_GENESIS" = "false" ]; then
 
   node_docker "${NODES[0]}" rm -f gl0-genesis toolbox 2>/dev/null || true
 else
-  PEER_ID="${PEER_ID:-mock}"
-  TOKEN_ID="${TOKEN_ID:-mock}"
+  # --skip-genesis: require PEER_ID and TOKEN_ID to be set in the environment.
+  # Defaulting to "mock" silently produces a broken deploy that fails at ML0 join time.
+  if [ -z "${PEER_ID:-}" ] || [ -z "${TOKEN_ID:-}" ]; then
+    echo "❌ --skip-genesis requires PEER_ID and TOKEN_ID to be set in the environment."
+    echo "   Run without --skip-genesis on first use, or export the values from a prior run:"
+    echo "     export PEER_ID=<peer-id>"
+    echo "     export TOKEN_ID=<token-id>"
+    exit 1
+  fi
 fi
 
 # ── Deploy compose + .env ────────────────────────────────────────────────
@@ -271,7 +280,7 @@ join_cluster() {
     local node="${NODES[$i]}"
     for j in $(seq 1 30); do
       state=$(node_exec "$node" "wget -qO- http://127.0.0.1:${cli_port}/node/info 2>/dev/null" | grep -o '"state":"[^"]*"' | cut -d'"' -f4 || echo "")
-      [ "$state" = "ReadyToJoin" ] || [ "$state" = "Ready" ] && break
+      { [ "$state" = "ReadyToJoin" ] || [ "$state" = "Ready" ]; } && break
       sleep 5
     done
     node_exec "$node" "wget -qO- --post-data='{\"id\":\"${PEER_ID}\",\"ip\":\"${NODE_IPS[0]}\",\"p2pPort\":${p2p_port}}' --header='Content-Type: application/json' 'http://127.0.0.1:${cli_port}/cluster/join'" 2>/dev/null || true
