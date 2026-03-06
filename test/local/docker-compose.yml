@@ -1,101 +1,405 @@
-# Local Deploy Test Harness
+# Local OttoChain Cluster — No DinD, just containers on a shared network
 #
-# Simulates the 3-node Hetzner cluster using Docker-in-Docker containers.
-# Each "node" runs its own Docker daemon and can launch metagraph containers.
+# Architecture:
+#   Node 1 (172.30.0.11): gl0-1, ml0-1, dl1-1 (genesis/initial node)
+#   Node 2 (172.30.0.12): gl0-2, ml0-2, dl1-2
+#   Node 3 (172.30.0.13): gl0-3, ml0-3, dl1-3
+#   Services (172.30.0.20+): postgres, redis, gateway, bridge, indexer, explorer, traffic-gen
 #
 # Usage:
-#   cd test/local
-#   docker compose up -d
-#   ./run-deploy-test.sh [--image-tag 0.7.9] [--wipe]
-#   docker compose down -v
+#   ./setup.sh          # generate keys, genesis, start cluster
+#   docker compose down -v  # tear down
+
+x-metagraph: &metagraph
+  image: ${IMAGE:-ghcr.io/scasplte2/ottochain-metagraph:0.7.9}
+  restart: unless-stopped
+  entrypoint: ["/bin/bash", "/ottochain/entrypoint-fixed.sh"]
+  networks:
+    cluster: {}
+
+x-gl0-env: &gl0-env
+  LAYER: gl0
+  CL_APP_ENV: dev
+  CL_COLLATERAL: "0"
+  CL_KEYSTORE: /keys/key.p12
+  CL_KEYALIAS: alias
+  CL_PASSWORD: ${CL_PASSWORD:-testpass}
+  JAVA_OPTS: -Xmx1g -Xms512m
+
+x-ml0-env: &ml0-env
+  LAYER: ml0
+  CL_APP_ENV: dev
+  CL_COLLATERAL: "0"
+  CL_KEYSTORE: /keys/key.p12
+  CL_KEYALIAS: alias
+  CL_PASSWORD: ${CL_PASSWORD:-testpass}
+  CL_GLOBAL_L0_PEER_ID: ${GL0_PEER_ID}
+  CL_GLOBAL_L0_PEER_HOST: 172.30.0.11
+  CL_GLOBAL_L0_PEER_PORT: "9000"
+  CL_GLOBAL_L0_PEER_HTTP_HOST: 172.30.0.11
+  CL_GLOBAL_L0_PEER_HTTP_PORT: "9000"
+  CL_PUBLIC_HTTP_PORT: "9200"
+  CL_P2P_HTTP_PORT: "9201"
+  CL_CLI_HTTP_PORT: "9202"
+  CL_TOKEN_ID: ${TOKEN_ID:-}
+  JAVA_OPTS: -Xmx1g -Xms512m
+
+x-dl1-env: &dl1-env
+  LAYER: dl1
+  CL_APP_ENV: dev
+  CL_COLLATERAL: "0"
+  CL_KEYSTORE: /keys/key.p12
+  CL_KEYALIAS: alias
+  CL_PASSWORD: ${CL_PASSWORD:-testpass}
+  CL_GLOBAL_L0_PEER_ID: ${GL0_PEER_ID}
+  CL_GLOBAL_L0_PEER_HOST: 172.30.0.11
+  CL_GLOBAL_L0_PEER_PORT: "9000"
+  CL_GLOBAL_L0_PEER_HTTP_HOST: 172.30.0.11
+  CL_GLOBAL_L0_PEER_HTTP_PORT: "9000"
+  CL_L0_PEER_ID: ${GL0_PEER_ID}
+  CL_L0_PEER_HOST: 172.30.0.21
+  CL_L0_PEER_HTTP_HOST: 172.30.0.21
+  CL_L0_PEER_HTTP_PORT: "9200"
+  CL_PUBLIC_HTTP_PORT: "9400"
+  CL_P2P_HTTP_PORT: "9401"
+  CL_CLI_HTTP_PORT: "9402"
+  CL_TOKEN_ID: ${TOKEN_ID:-}
+  CL_L0_TOKEN_IDENTIFIER: ${TOKEN_ID:-}
+  JAVA_OPTS: -Xmx1g -Xms512m
 
 services:
-  node1:
-    image: docker:27-dind
-    container_name: test-node1
-    privileged: true
-    environment:
-      - DOCKER_TLS_CERTDIR=  # disable TLS for simplicity
-    volumes:
-      - node1-data:/opt/ottochain
-      - node1-docker:/var/lib/docker
+  # ── Node 1 (genesis) ─────────────────────────────────────
+  gl0-1:
+    <<: *metagraph
+    container_name: gl0-1
     networks:
       cluster:
-        ipv4_address: 172.28.0.11
+        ipv4_address: 172.30.0.11
+    volumes:
+      - ./data/keys/node1:/keys:ro
+      - ./data/genesis:/ottochain/genesis:ro
+      - ./entrypoint-fixed.sh:/ottochain/entrypoint-fixed.sh:ro
+      - gl0-1-data:/ottochain/data
+    environment:
+      <<: *gl0-env
+      IS_INITIAL: "true"
+      CL_EXTERNAL_IP: 172.30.0.11
+
+  ml0-1:
+    <<: *metagraph
+    container_name: ml0-1
+    depends_on: [gl0-1]
+    networks:
+      cluster:
+        ipv4_address: 172.30.0.21
+    volumes:
+      - ./data/keys/node1:/keys:ro
+      - ./data/genesis:/ottochain/genesis:ro
+      - ./entrypoint-fixed.sh:/ottochain/entrypoint-fixed.sh:ro
+      - ml0-1-data:/ottochain/data
+    environment:
+      <<: *ml0-env
+      IS_INITIAL: "true"
+      CL_EXTERNAL_IP: 172.30.0.21
+
+  dl1-1:
+    <<: *metagraph
+    container_name: dl1-1
+    depends_on: [ml0-1]
+    networks:
+      cluster:
+        ipv4_address: 172.30.0.31
+    volumes:
+      - ./data/keys/node1:/keys:ro
+      - ./data/genesis:/ottochain/genesis:ro
+      - ./entrypoint-fixed.sh:/ottochain/entrypoint-fixed.sh:ro
+      - dl1-1-data:/ottochain/data
+    environment:
+      <<: *dl1-env
+      IS_INITIAL: "true"
+      CL_EXTERNAL_IP: 172.30.0.31
+
+  # ── Node 2 ───────────────────────────────────────────────
+  gl0-2:
+    <<: *metagraph
+    container_name: gl0-2
+    depends_on: [gl0-1]
+    networks:
+      cluster:
+        ipv4_address: 172.30.0.12
+    volumes:
+      - ./data/keys/node2:/keys:ro
+      - ./data/genesis:/ottochain/genesis:ro
+      - ./entrypoint-fixed.sh:/ottochain/entrypoint-fixed.sh:ro
+      - gl0-2-data:/ottochain/data
+    environment:
+      <<: *gl0-env
+      CL_EXTERNAL_IP: 172.30.0.12
+
+  ml0-2:
+    <<: *metagraph
+    container_name: ml0-2
+    depends_on: [gl0-2]
+    networks:
+      cluster:
+        ipv4_address: 172.30.0.22
+    volumes:
+      - ./data/keys/node2:/keys:ro
+      - ./data/genesis:/ottochain/genesis:ro
+      - ./entrypoint-fixed.sh:/ottochain/entrypoint-fixed.sh:ro
+      - ml0-2-data:/ottochain/data
+    environment:
+      <<: *ml0-env
+      CL_EXTERNAL_IP: 172.30.0.22
+
+  dl1-2:
+    <<: *metagraph
+    container_name: dl1-2
+    depends_on: [ml0-2]
+    networks:
+      cluster:
+        ipv4_address: 172.30.0.32
+    volumes:
+      - ./data/keys/node2:/keys:ro
+      - ./data/genesis:/ottochain/genesis:ro
+      - ./entrypoint-fixed.sh:/ottochain/entrypoint-fixed.sh:ro
+      - dl1-2-data:/ottochain/data
+    environment:
+      <<: *dl1-env
+      CL_EXTERNAL_IP: 172.30.0.32
+
+  # ── Node 3 ───────────────────────────────────────────────
+  gl0-3:
+    <<: *metagraph
+    container_name: gl0-3
+    depends_on: [gl0-1]
+    networks:
+      cluster:
+        ipv4_address: 172.30.0.13
+    volumes:
+      - ./data/keys/node3:/keys:ro
+      - ./data/genesis:/ottochain/genesis:ro
+      - ./entrypoint-fixed.sh:/ottochain/entrypoint-fixed.sh:ro
+      - gl0-3-data:/ottochain/data
+    environment:
+      <<: *gl0-env
+      CL_EXTERNAL_IP: 172.30.0.13
+
+  ml0-3:
+    <<: *metagraph
+    container_name: ml0-3
+    depends_on: [gl0-3]
+    networks:
+      cluster:
+        ipv4_address: 172.30.0.23
+    volumes:
+      - ./data/keys/node3:/keys:ro
+      - ./data/genesis:/ottochain/genesis:ro
+      - ./entrypoint-fixed.sh:/ottochain/entrypoint-fixed.sh:ro
+      - ml0-3-data:/ottochain/data
+    environment:
+      <<: *ml0-env
+      CL_EXTERNAL_IP: 172.30.0.23
+
+  dl1-3:
+    <<: *metagraph
+    container_name: dl1-3
+    depends_on: [ml0-3]
+    networks:
+      cluster:
+        ipv4_address: 172.30.0.33
+    volumes:
+      - ./data/keys/node3:/keys:ro
+      - ./data/genesis:/ottochain/genesis:ro
+      - ./entrypoint-fixed.sh:/ottochain/entrypoint-fixed.sh:ro
+      - dl1-3-data:/ottochain/data
+    environment:
+      <<: *dl1-env
+      CL_EXTERNAL_IP: 172.30.0.33
+
+  # ── Services ─────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ottochain
+      POSTGRES_PASSWORD: testpass
+      POSTGRES_DB: ottochain
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "docker", "info"]
+      test: ["CMD-SHELL", "pg_isready -U ottochain"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      cluster:
+        ipv4_address: 172.30.0.50
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 5
+    networks:
+      cluster:
+        ipv4_address: 172.30.0.51
 
-  node2:
-    image: docker:27-dind
-    container_name: test-node2
-    privileged: true
+  gateway:
+    image: ${SERVICES_IMAGE:-ghcr.io/ottobot-ai/ottochain-services:latest}
+    container_name: gateway
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
     environment:
-      - DOCKER_TLS_CERTDIR=
-    volumes:
-      - node2-data:/opt/ottochain
-      - node2-docker:/var/lib/docker
-    networks:
-      cluster:
-        ipv4_address: 172.28.0.12
-    healthcheck:
-      test: ["CMD", "docker", "info"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  node3:
-    image: docker:27-dind
-    container_name: test-node3
-    privileged: true
-    environment:
-      - DOCKER_TLS_CERTDIR=
-    volumes:
-      - node3-data:/opt/ottochain
-      - node3-docker:/var/lib/docker
-    networks:
-      cluster:
-        ipv4_address: 172.28.0.13
-    healthcheck:
-      test: ["CMD", "docker", "info"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  # Runner simulates the GitHub Actions runner
-  runner:
-    image: docker:27-cli
-    container_name: test-runner
-    volumes:
-      - ./run-deploy-test.sh:/test/run-deploy-test.sh:ro
-      - ./ssh-config:/root/.ssh/config:ro
-      - runner-keys:/root/.ssh
-    networks:
-      cluster:
-        ipv4_address: 172.28.0.10
+      SERVICE: gateway
+      PORT: "4000"
+      DATABASE_URL: postgresql://ottochain:testpass@172.30.0.50:5432/ottochain
+      REDIS_URL: redis://172.30.0.51:6379
     depends_on:
-      node1:
-        condition: service_healthy
-      node2:
-        condition: service_healthy
-      node3:
-        condition: service_healthy
-    entrypoint: ["sleep", "infinity"]
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks:
+      cluster:
+        ipv4_address: 172.30.0.52
+
+  bridge:
+    image: ${SERVICES_IMAGE:-ghcr.io/ottobot-ai/ottochain-services:latest}
+    container_name: bridge
+    restart: unless-stopped
+    ports:
+      - "3030:3030"
+    environment:
+      SERVICE: bridge
+      PORT: "3030"
+      DATABASE_URL: postgresql://ottochain:testpass@172.30.0.50:5432/ottochain
+      REDIS_URL: redis://172.30.0.51:6379
+      ML0_URL: http://172.30.0.21:9200
+      DL1_URL: http://172.30.0.31:9400
+      METAGRAPH_DL1_URL: http://172.30.0.31:9400
+      METAGRAPH_DL1_URLS: http://172.30.0.31:9400,http://172.30.0.32:9400,http://172.30.0.33:9400
+      METAGRAPH_ML0_URL: http://172.30.0.21:9200
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks:
+      cluster:
+        ipv4_address: 172.30.0.53
+
+  indexer:
+    image: ${SERVICES_IMAGE:-ghcr.io/ottobot-ai/ottochain-services:latest}
+    container_name: indexer
+    restart: unless-stopped
+    ports:
+      - "3031:3031"
+    environment:
+      SERVICE: indexer
+      PORT: "3031"
+      DATABASE_URL: postgresql://ottochain:testpass@172.30.0.50:5432/ottochain
+      REDIS_URL: redis://172.30.0.51:6379
+      METAGRAPH_ML0_URL: http://172.30.0.21:9200
+      GL0_URL: http://172.30.0.11:9000
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks:
+      cluster:
+        ipv4_address: 172.30.0.54
+
+  explorer:
+    image: ${EXPLORER_IMAGE:-ghcr.io/ottobot-ai/ottochain-explorer:latest}
+    container_name: explorer
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      VITE_API_URL: http://100.84.70.75:4000
+      VITE_WS_URL: ws://100.84.70.75:4000
+      VITE_BRIDGE_URL: http://100.84.70.75:3030
+    depends_on: [gateway]
+    networks:
+      cluster:
+        ipv4_address: 172.30.0.55
+
+  monitor:
+    image: ${SERVICES_IMAGE:-ghcr.io/ottobot-ai/ottochain-services:latest}
+    container_name: monitor
+    restart: unless-stopped
+    ports:
+      - "3032:3032"
+    environment:
+      SERVICE: monitor
+      MONITOR_PORT: "3032"
+      MONITOR_AUTH: "false"
+      GL0_URLS: http://172.30.0.11:9000,http://172.30.0.12:9000,http://172.30.0.13:9000
+      ML0_URLS: http://172.30.0.21:9200,http://172.30.0.22:9200,http://172.30.0.23:9200
+      DL1_URLS: http://172.30.0.31:9400,http://172.30.0.32:9400,http://172.30.0.33:9400
+      BRIDGE_URL: http://172.30.0.53:3030
+      INDEXER_URL: http://172.30.0.54:3031
+      GATEWAY_URL: http://172.30.0.52:4000
+      TRAFFIC_GEN_URL: http://172.30.0.56:3033
+      EXPLORER_URL: http://172.30.0.55:80
+      REDIS_URL: redis://172.30.0.51:6379
+      DATABASE_URL: postgresql://ottochain:testpass@172.30.0.50:5432/ottochain
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks:
+      cluster:
+        ipv4_address: 172.30.0.57
+
+  traffic-generator:
+    image: ${SERVICES_IMAGE:-ghcr.io/ottobot-ai/ottochain-services:latest}
+    container_name: traffic-generator
+    restart: unless-stopped
+    ports:
+      - "3033:3033"
+    environment:
+      SERVICE: traffic-generator
+      BRIDGE_URL: http://172.30.0.53:3030
+      ML0_URL: http://172.30.0.21:9200
+      DL1_URL: http://172.30.0.31:9400
+      METAGRAPH_DL1_URL: http://172.30.0.31:9400
+      METAGRAPH_DL1_URLS: http://172.30.0.31:9400,http://172.30.0.32:9400,http://172.30.0.33:9400
+      METAGRAPH_ML0_URL: http://172.30.0.21:9200
+      INDEXER_URL: http://172.30.0.54:3031
+      GATEWAY_URL: http://172.30.0.52:4000
+      REDIS_URL: redis://172.30.0.51:6379
+      DATABASE_URL: postgresql://ottochain:testpass@172.30.0.50:5432/ottochain
+      MODE: standard
+      TARGET_TPS: "2"
+      TARGET_POPULATION: "50"
+      STATUS_PORT: "3033"
+      AUTO_START: "true"
+    depends_on: [bridge, redis]
+    networks:
+      cluster:
+        ipv4_address: 172.30.0.56
 
 volumes:
-  node1-data:
-  node1-docker:
-  node2-data:
-  node2-docker:
-  node3-data:
-  node3-docker:
-  runner-keys:
+  gl0-1-data:
+  ml0-1-data:
+  dl1-1-data:
+  gl0-2-data:
+  ml0-2-data:
+  dl1-2-data:
+  gl0-3-data:
+  ml0-3-data:
+  dl1-3-data:
+  postgres_data:
 
 networks:
   cluster:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.28.0.0/24
+        - subnet: 172.30.0.0/24
