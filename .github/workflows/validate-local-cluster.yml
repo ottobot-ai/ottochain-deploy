@@ -24,7 +24,7 @@ jobs:
         working-directory: test/local
         run: |
           echo "🐳 Validating compose-override.yml..."
-          docker compose -f compose-override.yml config --quiet
+          docker compose -f docker-compose.yml -f compose-override.yml config --quiet
           echo "✅ compose-override.yml is valid"
 
       - name: Check setup.sh is executable and has no syntax errors
