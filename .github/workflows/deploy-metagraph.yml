@@ -320,7 +320,7 @@ jobs:
 
       - name: Download genesis artifacts
         if: needs.genesis.result == 'success'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: genesis
           path: genesis
