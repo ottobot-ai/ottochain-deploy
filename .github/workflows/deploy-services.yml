@@ -375,6 +375,7 @@ jobs:
               image: grafana/loki:2.9.4
               container_name: loki
               restart: unless-stopped
+              user: "0"
               ports:
                 - "3100:3100"
               volumes:
@@ -662,14 +663,14 @@ jobs:
                   labels:
                     severity: critical
                   annotations:
-                    summary: "{{ \$labels.job }} on {{ \$labels.node }} is down"
+                    summary: "{{ $labels.job }} on {{ $labels.node }} is down"
                 - alert: NodeHighHeapUsage
                   expr: jvm_memory_bytes_used{area="heap"} / jvm_memory_bytes_max{area="heap"} > 0.9
                   for: 5m
                   labels:
                     severity: warning
                   annotations:
-                    summary: "High heap usage on {{ \$labels.node }} {{ \$labels.job }}"
+                    summary: "High heap usage on {{ $labels.node }} {{ $labels.job }}"
                 - alert: AllNodesDown
                   expr: count(up{job=~"gl0|ml0|dl1"} == 1) == 0
                   for: 1m
@@ -690,21 +691,21 @@ jobs:
                   labels:
                     severity: warning
                   annotations:
-                    summary: "High memory on {{ \$labels.node }} ({{ \$value | printf \"%.1f\" }}%)"
+                    summary: "High memory on {{ $labels.node }} ({{ $value | printf \"%.1f\" }}%)"
                 - alert: DiskLow
                   expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 20
                   for: 5m
                   labels:
                     severity: warning
                   annotations:
-                    summary: "Low disk on {{ \$labels.node }} ({{ \$value | printf \"%.1f\" }}% free)"
+                    summary: "Low disk on {{ $labels.node }} ({{ $value | printf \"%.1f\" }}% free)"
                 - alert: HostDown
                   expr: up{job="metagraph-nodes"} == 0
                   for: 2m
                   labels:
                     severity: critical
                   annotations:
-                    summary: "Host {{ \$labels.node }} is unreachable"
+                    summary: "Host {{ $labels.node }} is unreachable"
           INFRA_EOF
 
           # Alert rules — services
@@ -894,17 +895,11 @@ jobs:
           # Flush Redis
           docker exec redis redis-cli FLUSHALL && echo "✓ Redis flushed"
           
-          # Truncate all Postgres tables
+          # Drop and recreate schema so prisma migrate deploy starts clean
           docker exec postgres psql -U ottochain -d ottochain -c "
-            DO \$\$
-            DECLARE
-              r RECORD;
-            BEGIN
-              FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
-                EXECUTE 'TRUNCATE TABLE \"' || r.tablename || '\" CASCADE';
-              END LOOP;
-            END \$\$;
-          " && echo "✓ Postgres tables truncated"
+            DROP SCHEMA public CASCADE;
+            CREATE SCHEMA public;
+          " && echo "✓ Postgres schema reset (clean slate for migrations)"
           RESET_SCRIPT
           
       - name: Run migrations and restart services
@@ -912,11 +907,13 @@ jobs:
           ssh services << 'MIGRATE_SCRIPT'
           cd /opt/ottochain-services
           
-          # Run database migrations
-          docker compose exec -T indexer npx prisma db push --accept-data-loss || true
-          
-          # Restart app services to pick up clean state
+          # Restart services — container entrypoint runs prisma migrate deploy
+          # On fresh DB (after reset): creates schema from migration files
+          # On existing DB: applies any pending migrations
           docker compose restart gateway bridge indexer status || true
+          
+          # Wait for migrations to complete and services to be healthy
+          sleep 15
           
           # Show status
           docker compose ps
