@@ -72,12 +72,12 @@ environments:
 # === Deployed State (updated by CI after successful deploy) ===
 deployed:
   scratch:
-    ottochain: "0.7.9"
-    services: "v0.8.0"
-    explorer: "v0.5.2"
+    ottochain: "0.7.13"
+    services: "v0.11.0"
+    explorer: "v0.7.0"
     watchdog: ""
-    timestamp: "2026-03-04T14:11:33Z"
-    workflow_run: "22672562245"
+    timestamp: "2026-03-13T15:56:13Z"
+    workflow_run: "23058616792"
   staging:
     ottochain: ""
     services: ""
