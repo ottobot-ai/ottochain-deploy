@@ -9,8 +9,8 @@
 #   3. version-bump.yml updates this file automatically
 #   4. Merge triggers deploy-on-merge.yml → deploys to scratch env
 
-# Last updated: 2026-02-27
-# Updated by: @main (metakit rc.9, tess rc.10, SDK 1.1.1)
+# Last updated: 2026-03-12
+# Updated by: @main (scratch deploy catchup — services 0.10.0, explorer 0.7.0, SDK 1.4.0)
 
 # === Component Versions ===
 components:
@@ -24,18 +24,18 @@ components:
     repo: "Constellation-Labs/tessellation"
   # OttoChain SDK (TypeScript) - published to npmjs.com as @ottochain/sdk
   sdk:
-    version: "1.1.1"
+    version: "1.4.0"
     repo: "ottobot-ai/ottochain-sdk"
     package: "@ottochain/sdk"
     registry: "https://registry.npmjs.org"
   # OttoChain Services (TypeScript) - Docker image
   services:
-    version: "0.9.0"
+    version: "0.10.0"
     repo: "ottobot-ai/ottochain-services"
     image: "ghcr.io/ottobot-ai/ottochain-services"
   # OttoChain Explorer (TypeScript) - Docker image
   explorer:
-    version: "0.6.0"
+    version: "0.7.0"
     repo: "ottobot-ai/ottochain-explorer"
     image: "ghcr.io/ottobot-ai/ottochain-explorer"
   # OttoChain Watchdog (condition detection & auto-restart)
