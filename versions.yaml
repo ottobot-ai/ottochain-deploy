@@ -76,8 +76,8 @@ deployed:
     services: "v0.11.0"
     explorer: "v0.7.0"
     watchdog: ""
-    timestamp: "2026-03-13T15:56:13Z"
-    workflow_run: "23058616792"
+    timestamp: "2026-03-13T17:56:08Z"
+    workflow_run: "23063308313"
   staging:
     ottochain: ""
     services: ""
