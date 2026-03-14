@@ -52,11 +52,13 @@ describe('PNPM Migration', () => {
       for (const file of workflowFiles) {
         const content = readFileSync(join(ROOT_DIR, file), 'utf8');
         
-        // Check for npm commands that should be replaced
-        expect(content).not.toMatch(/npm install(?!\s+pnpm)/);
-        expect(content).not.toMatch(/npm init(?!\s+pnpm)/);
-        expect(content).not.toMatch(/npm run/);
-        expect(content).not.toMatch(/npm ci/);
+        // Check for npm commands that should be replaced.
+        // Use negative lookbehind (?<!p) so that "pnpm install" (which contains
+        // "npm install" as a substring) does not trigger a false positive.
+        expect(content).not.toMatch(/(?<!p)npm install(?!\s+pnpm)/);
+        expect(content).not.toMatch(/(?<!p)npm init(?!\s+pnpm)/);
+        expect(content).not.toMatch(/(?<!p)npm run/);
+        expect(content).not.toMatch(/(?<!p)npm ci/);
         
         // If the workflow installs packages, it should use pnpm
         if (content.includes('install playwright') || content.includes('package.json')) {
