@@ -458,6 +458,7 @@ jobs:
             alertmanager_data:
             loki_data:
             watchdog_ssh:
+              external: true
           COMPOSE_EOF
 
       - name: Write .env
@@ -788,6 +789,18 @@ jobs:
                 path: /etc/grafana/provisioning/dashboards/
                 foldersFromFilesStructure: false
           DASH_EOF
+
+      - name: Copy Grafana dashboards
+        run: |
+          # Copy dashboard JSON files from repo to server
+          scp monitoring/grafana/provisioning/dashboards/*.json services:/opt/ottochain-services/grafana/provisioning/dashboards/
+
+      - name: Setup Loki and Promtail configs
+        run: |
+          NODE1_IP="${{ secrets.HETZNER_NODE1_IP }}"
+          NODE2_IP="${{ secrets.HETZNER_NODE2_IP }}"
+          NODE3_IP="${{ secrets.HETZNER_NODE3_IP }}"
+          SERVICES_IP="${{ secrets.HETZNER_SERVICES_IP }}"
 
           # Loki config
           ssh services "cat > /opt/ottochain-services/loki/loki-config.yml" << 'LOKI_EOF'
