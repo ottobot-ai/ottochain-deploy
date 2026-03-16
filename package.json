@@ -10,7 +10,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.5.0",
     "js-yaml": "^4.1.0",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.0"
   },
   "type": "module"
 }
