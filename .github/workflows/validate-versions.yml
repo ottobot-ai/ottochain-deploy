@@ -21,8 +21,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -41,7 +39,7 @@ jobs:
           fi
           
           # Check all components have versions
-          for comp in ottochain sdk services explorer watchdog; do
+          for comp in ottochain services explorer watchdog; do
             VERSION=$(yq ".components.$comp.version // \"\"" versions.yaml)
             if [ -z "$VERSION" ]; then
               echo "❌ Missing version for $comp"

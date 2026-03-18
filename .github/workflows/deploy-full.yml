@@ -112,7 +112,6 @@ jobs:
           echo "explorer=$EXPLORER" >> $GITHUB_OUTPUT
 
           # Read all versions for the summary
-          YAML_SDK=$(yq '.components.sdk.version' versions.yaml)
           YAML_WATCHDOG=$(yq '.components.watchdog.version' versions.yaml)
           YAML_TESS=$(yq '.components.tessellation.version' versions.yaml)
           YAML_POSTGRES=$(yq '.infra.postgres' versions.yaml)
@@ -131,7 +130,6 @@ jobs:
           echo "| Tessellation | \`$YAML_TESS\` | Constellation Labs |" >> $GITHUB_STEP_SUMMARY
           echo "| Services (bridge/indexer/gateway) | \`$SERVICES\` | \`ghcr.io/ottobot-ai/ottochain-services:$SERVICES\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Explorer | \`$EXPLORER\` | \`ghcr.io/ottobot-ai/ottochain-explorer:$EXPLORER\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| SDK | \`$YAML_SDK\` | \`@ottochain/sdk@$YAML_SDK\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Watchdog | \`$YAML_WATCHDOG\` | \`ghcr.io/ottobot-ai/ottochain-watchdog:latest\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "#### Infrastructure" >> $GITHUB_STEP_SUMMARY
@@ -287,7 +285,6 @@ jobs:
           echo "| Component | Version |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|---------|" >> $GITHUB_STEP_SUMMARY
           echo "| Tessellation | \`$(yq '.components.tessellation.version' versions.yaml)\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| SDK | \`$(yq '.components.sdk.version' versions.yaml)\` |" >> $GITHUB_STEP_SUMMARY
           echo "| PostgreSQL | \`$(yq '.infra.postgres' versions.yaml)\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Redis | \`$(yq '.infra.redis' versions.yaml)\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Java | \`$(yq '.infra.java' versions.yaml)\` |" >> $GITHUB_STEP_SUMMARY

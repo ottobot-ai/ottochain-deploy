@@ -9,8 +9,8 @@
 #   3. version-bump.yml updates this file automatically
 #   4. Merge triggers deploy-on-merge.yml → deploys to scratch env
 
-# Last updated: 2026-03-12
-# Updated by: @main (scratch deploy catchup — services 0.10.0, explorer 0.7.0, SDK 1.4.0)
+# Last updated: 2026-03-18
+# Updated by: @main (removed SDK — it's baked into services/explorer images, tracking here was redundant)
 
 # === Component Versions ===
 components:
@@ -22,12 +22,6 @@ components:
   tessellation:
     version: "4.0.0-rc.10"
     repo: "Constellation-Labs/tessellation"
-  # OttoChain SDK (TypeScript) - published to npmjs.com as @ottochain/sdk
-  sdk:
-    version: "1.4.0"
-    repo: "ottobot-ai/ottochain-sdk"
-    package: "@ottochain/sdk"
-    registry: "https://registry.npmjs.org"
   # OttoChain Services (TypeScript) - Docker image
   services:
     version: "0.12.0"

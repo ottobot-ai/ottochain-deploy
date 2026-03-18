@@ -6,14 +6,13 @@ on:
   workflow_dispatch:
     inputs:
       component:
-        description: 'Component to bump (ottochain, services, explorer, sdk, watchdog)'
+        description: 'Component to bump (ottochain, services, explorer, watchdog)'
         required: true
         type: choice
         options:
           - ottochain
           - services
           - explorer
-          - sdk
           - watchdog
       version:
         description: 'Version (without v prefix, e.g., 0.3.0)'
