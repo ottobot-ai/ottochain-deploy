@@ -10,25 +10,15 @@ components:
       - ghcr.io/scasplte2/ottochain-metagraph
       - github.com/scasplte2/ottochain/releases (JARs)
 
-  sdk:
-    description: "TypeScript SDK (@ottochain/sdk)"
-    type: client
-    artifacts:
-      - npmjs.com/@ottochain/sdk
-      - npm.pkg.github.com/@ottochain/sdk
-    requires:
-      # SDK must be compatible with core's data types and API
-      ottochain: ">=0.5.0 <1.0.0"
+  # Note: SDK (@ottochain/sdk) is embedded in services/explorer at build time.
+  # SDK compatibility is validated in their CI, not at deploy time.
 
   services:
     description: "Backend services (bridge, indexer, API)"
     type: backend
     artifacts:
-      - ghcr.io/ottobot-ai/ottochain-bridge
-      - ghcr.io/ottobot-ai/ottochain-indexer
+      - ghcr.io/ottobot-ai/ottochain-services
     requires:
-      # Services use SDK for chain interaction
-      sdk: ">=0.2.0"
       # Services must understand core's snapshot format
       ottochain: ">=0.5.0 <1.0.0"
 
