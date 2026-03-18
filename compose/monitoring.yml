@@ -1,13 +1,8 @@
-# Monitoring stack - Prometheus, Alertmanager, Grafana
+# Monitoring stack - Prometheus, Alertmanager, Grafana, Loki
 # Usage: docker compose -f compose/base.yml -f compose/monitoring.yml up -d
 #
-# REQUIRES: Clone ottochain-monitoring alongside this repo:
-#   git clone https://github.com/ottobot-ai/ottochain-monitoring.git ../ottochain-monitoring
-#
-# Or set MONITORING_PATH to point to your clone:
-#   MONITORING_PATH=/path/to/ottochain-monitoring docker compose -f compose/monitoring.yml up -d
-
-x-monitoring-path: &monitoring-path ${MONITORING_PATH:-../ottochain-monitoring}
+# Configs live in monitoring/ (colocated in this repo)
+# BEFORE FIRST RUN: ./scripts/generate-monitoring-configs.sh (renders templates from .env)
 
 services:
   prometheus:
@@ -17,9 +12,9 @@ services:
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
-      - ${MONITORING_PATH:-../ottochain-monitoring}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ${MONITORING_PATH:-../ottochain-monitoring}/prometheus/alert_rules:/etc/prometheus/alert_rules:ro
-      - ${MONITORING_PATH:-../ottochain-monitoring}/prometheus/recording_rules.yml:/etc/prometheus/recording_rules.yml:ro
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alert_rules:/etc/prometheus/alert_rules:ro
+      - ./monitoring/prometheus/recording_rules.yml:/etc/prometheus/recording_rules.yml:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -42,8 +37,8 @@ services:
     ports:
       - "${ALERTMANAGER_PORT:-9093}:9093"
     volumes:
-      - ${MONITORING_PATH:-../ottochain-monitoring}/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-      - ${MONITORING_PATH:-../ottochain-monitoring}/alertmanager/templates:/etc/alertmanager/templates:ro
+      - ./monitoring/alertmanager/alertmanager.rendered.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./monitoring/alertmanager/templates:/etc/alertmanager/templates:ro
       - alertmanager_data:/alertmanager
     command:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
@@ -60,16 +55,29 @@ services:
       - "${GRAFANA_PORT:-3000}:3000"
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set}
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
-      GF_ALERTING_ENABLED: "true"
+      GF_ALERTING_ENABLED: "false"
       GF_UNIFIED_ALERTING_ENABLED: "true"
     volumes:
       - grafana_data:/var/lib/grafana
-      - ${MONITORING_PATH:-../ottochain-monitoring}/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       - prometheus
+    networks:
+      - monitoring
+
+  loki:
+    image: grafana/loki:2.9.4
+    container_name: loki
+    restart: unless-stopped
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ./monitoring/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/loki-config.yml
     networks:
       - monitoring
 
@@ -77,6 +85,7 @@ volumes:
   prometheus_data:
   alertmanager_data:
   grafana_data:
+  loki_data:
 
 networks:
   ottochain:

@@ -12,10 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
 
@@ -41,7 +41,7 @@ jobs:
           fi
           
           # Check all components have versions
-          for comp in ottochain sdk services explorer monitoring; do
+          for comp in ottochain sdk services explorer watchdog; do
             VERSION=$(yq ".components.$comp.version // \"\"" versions.yaml)
             if [ -z "$VERSION" ]; then
               echo "❌ Missing version for $comp"
@@ -94,8 +94,10 @@ jobs:
           fi
 
       - name: Verify artifacts exist
+        id: artifacts
         run: |
           echo "📦 Verifying artifacts exist..."
+          ERRORS=""
           
           # Check GitHub releases
           OTTO_VERSION=$(yq '.components.ottochain.version' versions.yaml)
@@ -106,13 +108,54 @@ jobs:
             echo "⚠️ ottochain v$OTTO_VERSION release not found (may be pending)"
           fi
           
-          # Check Docker images
-          SERVICES_VERSION=$(yq '.components.services.version' versions.yaml)
-          echo "Checking services v$SERVICES_VERSION..."
-          # Note: Can't easily check GHCR without auth, skip for now
+          # Check Docker images in GHCR
+          check_ghcr_image() {
+            local IMAGE=$1
+            local VERSION=$2
+            local ORG=$(echo $IMAGE | cut -d'/' -f2)
+            local NAME=$(echo $IMAGE | cut -d'/' -f3)
+            
+            # Query GHCR via GitHub API for package versions
+            # ottobot-ai is a user account, not an org — try both endpoints
+            if gh api "users/$ORG/packages/container/$NAME/versions" \
+                --jq ".[].metadata.container.tags[]" 2>/dev/null | grep -q "^v\?$VERSION$"; then
+              echo "✅ $IMAGE:$VERSION exists in GHCR"
+              return 0
+            else
+              echo "❌ $IMAGE:$VERSION NOT FOUND in GHCR"
+              return 1
+            fi
+          }
           
-          echo ""
-          echo "ℹ️ Full artifact verification runs during deployment"
+          # Check services image
+          SERVICES_VERSION=$(yq '.components.services.version' versions.yaml)
+          SERVICES_IMAGE=$(yq '.components.services.image' versions.yaml)
+          if [ -n "$SERVICES_IMAGE" ]; then
+            echo "Checking $SERVICES_IMAGE:$SERVICES_VERSION..."
+            if ! check_ghcr_image "$SERVICES_IMAGE" "$SERVICES_VERSION"; then
+              ERRORS="$ERRORS\n❌ services v$SERVICES_VERSION image not found in GHCR"
+            fi
+          fi
+          
+          # Check explorer image
+          EXPLORER_VERSION=$(yq '.components.explorer.version' versions.yaml)
+          EXPLORER_IMAGE=$(yq '.components.explorer.image // ""' versions.yaml)
+          if [ -n "$EXPLORER_IMAGE" ]; then
+            echo "Checking $EXPLORER_IMAGE:$EXPLORER_VERSION..."
+            if ! check_ghcr_image "$EXPLORER_IMAGE" "$EXPLORER_VERSION"; then
+              ERRORS="$ERRORS\n❌ explorer v$EXPLORER_VERSION image not found in GHCR"
+            fi
+          fi
+          
+          if [ -n "$ERRORS" ]; then
+            echo -e "\n$ERRORS"
+            echo "has_errors=true" >> $GITHUB_OUTPUT
+            exit 1
+          else
+            echo ""
+            echo "✅ All artifact checks passed!"
+            echo "has_errors=false" >> $GITHUB_OUTPUT
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -125,8 +168,8 @@ jobs:
           yq '.components' versions.yaml >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.compat.outputs.has_errors }}" = "true" ]; then
-            echo "### ❌ Compatibility Errors Found" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.compat.outputs.has_errors }}" = "true" ] || [ "${{ steps.artifacts.outputs.has_errors }}" = "true" ]; then
+            echo "### ❌ Validation Errors Found" >> $GITHUB_STEP_SUMMARY
             echo "Please review the workflow logs for details." >> $GITHUB_STEP_SUMMARY
           else
             echo "### ✅ All Checks Passed" >> $GITHUB_STEP_SUMMARY

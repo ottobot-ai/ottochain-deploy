@@ -1,0 +1,49 @@
+# Recording rules for pre-computed metrics
+# These run at evaluation_interval and store results for faster queries
+
+groups:
+  - name: ottochain_recording
+    rules:
+      # Memory usage percentage - with node_type label for metagraph nodes
+      - record: ottochain:node_memory_usage_percent
+        expr: |
+          label_replace(
+            100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)),
+            "node_type", "metagraph", "instance", "5\\.78\\.(90|113|107).*"
+          )
+
+      # CPU usage percentage (1 minute average) - with node_type label
+      - record: ottochain:node_cpu_usage_percent
+        expr: |
+          label_replace(
+            100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[1m])) * 100),
+            "node_type", "metagraph", "instance", "5\\.78\\.(90|113|107).*"
+          )
+
+      # Disk usage percentage - with node_type label
+      - record: ottochain:node_disk_usage_percent
+        expr: |
+          label_replace(
+            100 * (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})),
+            "node_type", "metagraph", "instance", "5\\.78\\.(90|113|107).*"
+          )
+
+      # Aggregated metagraph averages (for dashboard stat panels)
+      - record: ottochain:metagraph_cpu_avg
+        expr: avg(ottochain:node_cpu_usage_percent{node_type="metagraph"})
+
+      - record: ottochain:metagraph_memory_avg
+        expr: avg(ottochain:node_memory_usage_percent{node_type="metagraph"})
+
+      - record: ottochain:metagraph_disk_avg
+        expr: avg(ottochain:node_disk_usage_percent{node_type="metagraph"})
+
+      # JVM heap usage percentage per tessellation node
+      - record: ottochain:jvm_heap_usage_percent
+        expr: |
+          100 * (jvm_memory_bytes_used{area="heap"} / jvm_memory_bytes_max{area="heap"})
+
+      # All nodes up status (1 = all up, 0 = at least one down)
+      - record: ottochain:all_nodes_up
+        expr: |
+          min(up{job=~"gl0|ml0|cl1|dl1"})

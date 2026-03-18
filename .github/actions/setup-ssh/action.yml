@@ -59,6 +59,9 @@ runs:
           User root
           IdentityFile ~/.ssh/hetzner
           StrictHostKeyChecking no
+          ConnectTimeout 15
+          ServerAliveInterval 30
+          ServerAliveCountMax 3
         EOF
         }
 

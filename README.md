@@ -7,7 +7,7 @@ Single source of truth for OttoChain deployment infrastructure.
 ```
 ┌───────────────┐  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐
 │ ottochain     │  │ ottochain-    │  │ ottochain-    │  │ ottochain-    │
-│ (metagraph)   │  │ services      │  │ explorer      │  │ monitoring    │
+│ (metagraph)   │  │ services      │  │ explorer      │  │ watchdog      │
 │               │  │               │  │               │  │               │
 │ CI → JAR      │  │ CI → ghcr.io  │  │ CI → ghcr.io  │  │ Configs only  │
 └───────┬───────┘  └───────┬───────┘  └───────┬───────┘  └───────┬───────┘
@@ -32,8 +32,8 @@ Single source of truth for OttoChain deployment infrastructure.
 git clone https://github.com/ottobot-ai/ottochain-deploy.git
 cd ottochain-deploy
 
-# Clone monitoring repo (required for monitoring stack)
-git clone https://github.com/ottobot-ai/ottochain-monitoring.git ../ottochain-monitoring
+# Clone watchdog repo (optional — for self-healing restarts)
+git clone https://github.com/ottobot-ai/ottochain-watchdog.git ../ottochain-watchdog
 
 # Set up environment
 cp envs/local.env .env
@@ -152,7 +152,7 @@ ottochain-deploy/
 │   ├── services.yml         # Gateway, Bridge, Indexer, Monitor
 │   ├── explorer.yml         # React frontend
 │   ├── metagraph.yml        # 5-layer Tessellation stack
-│   ├── monitoring.yml       # References ottochain-monitoring repo
+│   ├── monitoring.yml       # Prometheus, Alertmanager, Grafana (configs in monitoring/)
 │   ├── exporters.yml        # Metric exporters
 │   ├── logging.yml          # Loki, Promtail
 │   └── traffic.yml          # Traffic generator
@@ -167,7 +167,7 @@ ottochain-deploy/
 └── .env                     # Active environment (gitignored)
 
 # Sibling repo (clone alongside):
-../ottochain-monitoring/     # Prometheus, Grafana, Alertmanager configs
+../ottochain-watchdog/     # Self-healing watchdog, Alertmanager configs
 ```
 
 ## Ports
@@ -199,7 +199,7 @@ Each repo is independently deployable:
 # Run any repo standalone
 cd ottochain-services && docker compose up -d
 cd ottochain-explorer && docker compose up -d
-cd ottochain-monitoring && docker compose up -d
+cd ottochain-watchdog && docker compose up -d
 
 # Or use deploy to orchestrate all together
 cd ottochain-deploy && make full
@@ -212,6 +212,6 @@ cd ottochain-deploy && make full
 | [ottochain](https://github.com/scasplte2/ottochain) | Metagraph (Scala) | ✅ `just up` |
 | [ottochain-services](https://github.com/ottobot-ai/ottochain-services) | Gateway, Bridge, Indexer | ✅ `docker compose up` |
 | [ottochain-explorer](https://github.com/ottobot-ai/ottochain-explorer) | React frontend | ✅ `docker compose up` |
-| [ottochain-monitoring](https://github.com/ottobot-ai/ottochain-monitoring) | Prometheus, Grafana | ✅ `docker compose up` |
+| [ottochain-watchdog](https://github.com/ottobot-ai/ottochain-watchdog) | Self-healing watchdog | ✅ `docker compose up` |
 | [ottochain-sdk](https://github.com/ottobot-ai/ottochain-sdk) | TypeScript SDK | N/A (library) |
 | **ottochain-deploy** | Orchestration | Combines all above |

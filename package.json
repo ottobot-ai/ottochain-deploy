@@ -1,10 +1,21 @@
 {
-	"packageManager": "pnpm@10.30.0",
-	"dependencies": {
-		"semver": "^7.7.1"
-	},
-	"devDependencies": {
-		"glob": "^13.0.6",
-		"vitest": "^3.1.1"
-	}
+  "name": "ottochain-deploy",
+  "version": "1.0.0",
+  "description": "OttoChain deployment and infrastructure automation",
+  "packageManager": "pnpm@10.30.0",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "semver": "^7.7.1"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^25.5.0",
+    "glob": "^13.0.6",
+    "js-yaml": "^4.1.0",
+    "vitest": "^4.1.0"
+  }
 }

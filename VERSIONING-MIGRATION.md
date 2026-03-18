@@ -38,7 +38,7 @@
 - [ ] **5.2** Add compatibility declaration (requires services API X.Y.Z)
 - [ ] **5.3** Verify Docker image publishing
 
-## Phase 6: Monitoring (ottochain-monitoring)
+## Phase 6: Monitoring (ottochain-watchdog)
 
 - [x] **6.1** Add `release-please.yml` workflow
 - [x] **6.2** Minimal compatibility needs (mostly standalone)

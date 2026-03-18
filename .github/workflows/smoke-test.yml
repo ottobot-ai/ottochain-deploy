@@ -54,25 +54,53 @@ jobs:
     
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Load environment config
         id: config
+        env:
+          # Infrastructure from JSON secret (preferred) or legacy individual secrets
+          SCRATCH_INFRA: ${{ secrets.SCRATCH_INFRASTRUCTURE }}
+          STAGING_INFRA: ${{ secrets.STAGING_INFRASTRUCTURE }}
+          # Legacy fallback
+          LEGACY_SERVICES_IP: ${{ secrets.HETZNER_SERVICES_IP }}
+          LEGACY_NODE1_IP: ${{ secrets.HETZNER_NODE1_IP }}
         run: |
           ENV="${{ inputs.environment }}"
+          
+          # Try JSON infrastructure secret first, fall back to legacy
           case "$ENV" in
             scratch)
-              echo "bridge_url=http://5.78.121.248:3030" >> $GITHUB_OUTPUT
-              echo "indexer_url=http://5.78.121.248:3031" >> $GITHUB_OUTPUT
-              echo "gateway_url=http://5.78.121.248:4000" >> $GITHUB_OUTPUT
-              echo "explorer_url=http://5.78.121.248:8080" >> $GITHUB_OUTPUT
-              echo "ml0_url=http://5.78.90.207:9200" >> $GITHUB_OUTPUT
+              INFRA_JSON="$SCRATCH_INFRA"
+              ;;
+            staging)
+              INFRA_JSON="$STAGING_INFRA"
               ;;
             *)
-              echo "Unknown environment: $ENV"
-              exit 1
+              INFRA_JSON=""
               ;;
           esac
+          
+          if [ -n "$INFRA_JSON" ]; then
+            # Parse JSON infrastructure secret
+            SERVICES_IP=$(echo "$INFRA_JSON" | jq -r '.services_host')
+            NODE1_IP=$(echo "$INFRA_JSON" | jq -r '.nodes[0].host')
+            echo "Using JSON infrastructure secret for $ENV"
+          elif [ -n "$LEGACY_SERVICES_IP" ] && [ -n "$LEGACY_NODE1_IP" ]; then
+            # Fall back to legacy individual secrets
+            SERVICES_IP="$LEGACY_SERVICES_IP"
+            NODE1_IP="$LEGACY_NODE1_IP"
+            echo "::warning::Using legacy individual secrets. Please migrate to ${ENV^^}_INFRASTRUCTURE JSON secret."
+          else
+            echo "::error::Missing infrastructure secrets. Set ${ENV^^}_INFRASTRUCTURE or legacy HETZNER_*_IP secrets."
+            exit 1
+          fi
+          
+          echo "bridge_url=http://${SERVICES_IP}:3030" >> $GITHUB_OUTPUT
+          echo "indexer_url=http://${SERVICES_IP}:3031" >> $GITHUB_OUTPUT
+          echo "gateway_url=http://${SERVICES_IP}:4000" >> $GITHUB_OUTPUT
+          echo "explorer_url=http://${SERVICES_IP}:8080" >> $GITHUB_OUTPUT
+          echo "ml0_url=http://${NODE1_IP}:9200" >> $GITHUB_OUTPUT
 
       - name: Run API smoke tests
         id: test
@@ -103,10 +131,10 @@ jobs:
     
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
 
@@ -122,16 +150,36 @@ jobs:
 
       - name: Load environment config
         id: config
+        env:
+          SCRATCH_INFRA: ${{ secrets.SCRATCH_INFRASTRUCTURE }}
+          STAGING_INFRA: ${{ secrets.STAGING_INFRASTRUCTURE }}
+          LEGACY_SERVICES_IP: ${{ secrets.HETZNER_SERVICES_IP }}
         run: |
           ENV="${{ inputs.environment }}"
+          
           case "$ENV" in
             scratch)
-              echo "explorer_url=http://5.78.121.248:8080" >> $GITHUB_OUTPUT
+              INFRA_JSON="$SCRATCH_INFRA"
+              ;;
+            staging)
+              INFRA_JSON="$STAGING_INFRA"
               ;;
             *)
               echo "explorer_url=http://localhost:8080" >> $GITHUB_OUTPUT
+              exit 0
               ;;
           esac
+          
+          if [ -n "$INFRA_JSON" ]; then
+            SERVICES_IP=$(echo "$INFRA_JSON" | jq -r '.services_host')
+          elif [ -n "$LEGACY_SERVICES_IP" ]; then
+            SERVICES_IP="$LEGACY_SERVICES_IP"
+          else
+            echo "::error::Missing infrastructure secret for $ENV"
+            exit 1
+          fi
+          
+          echo "explorer_url=http://${SERVICES_IP}:8080" >> $GITHUB_OUTPUT
 
       - name: Run UI verification
         id: test
@@ -148,7 +196,7 @@ jobs:
 
       - name: Upload screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: explorer-screenshots
           path: screenshots/

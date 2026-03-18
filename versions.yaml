@@ -9,39 +9,40 @@
 #   3. version-bump.yml updates this file automatically
 #   4. Merge triggers deploy-on-merge.yml → deploys to scratch env
 
-# Last updated: 2026-02-19
-# Updated by: version consolidation
+# Last updated: 2026-03-12
+# Updated by: @main (scratch deploy catchup — services 0.10.0, explorer 0.7.0, SDK 1.4.0)
 
 # === Component Versions ===
 components:
   # OttoChain metagraph (Scala) - builds JARs
   ottochain:
-    version: "0.7.5"
+    version: "0.7.12"
     repo: "scasplte2/ottochain"
   # Tessellation SDK version (external dependency)
   tessellation:
-    version: "4.0.0-rc.2"
+    version: "4.0.0-rc.10"
     repo: "Constellation-Labs/tessellation"
   # OttoChain SDK (TypeScript) - published to npmjs.com as @ottochain/sdk
   sdk:
-    version: "1.0.1"
+    version: "1.4.0"
     repo: "ottobot-ai/ottochain-sdk"
     package: "@ottochain/sdk"
     registry: "https://registry.npmjs.org"
   # OttoChain Services (TypeScript) - Docker image
   services:
-    version: "0.4.1"
+    version: "0.11.0"
     repo: "ottobot-ai/ottochain-services"
     image: "ghcr.io/ottobot-ai/ottochain-services"
   # OttoChain Explorer (TypeScript) - Docker image
   explorer:
-    version: "0.4.1"
+    version: "0.7.0"
     repo: "ottobot-ai/ottochain-explorer"
     image: "ghcr.io/ottobot-ai/ottochain-explorer"
-  # OttoChain Monitoring (configs/dashboards)
-  monitoring:
-    version: "0.1.0"
-    repo: "ottobot-ai/ottochain-monitoring"
+  # OttoChain Watchdog (condition detection & auto-restart)
+  watchdog:
+    version: "1.2.6"
+    repo: "ottobot-ai/ottochain-watchdog"
+    image: "ghcr.io/ottobot-ai/ottochain-watchdog"
 # === Monitoring Tool Versions ===
 monitoring_tools:
   prometheus: "v2.50.0"
@@ -71,9 +72,23 @@ environments:
 # === Deployed State (updated by CI after successful deploy) ===
 deployed:
   scratch:
+    ottochain: "0.7.13"
+    services: "v0.11.0"
+    explorer: "v0.7.0"
+    watchdog: ""
+    timestamp: "2026-03-13T17:56:08Z"
+    workflow_run: "23063308313"
+  staging:
     ottochain: ""
     services: ""
     explorer: ""
-    monitoring: ""
+    watchdog: ""
+    timestamp: ""
+    workflow_run: ""
+  production:
+    ottochain: ""
+    services: ""
+    explorer: ""
+    watchdog: ""
     timestamp: ""
     workflow_run: ""

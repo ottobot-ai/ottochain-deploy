@@ -1,12 +1,12 @@
 #!/bin/bash
-# Generate COMPATIBILITY.md from versions.yml
+# Generate COMPATIBILITY.md from versions.yaml
 # Usage: ./scripts/generate-compatibility.sh
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
-VERSIONS_FILE="$ROOT_DIR/versions.yml"
+VERSIONS_FILE="$ROOT_DIR/versions.yaml"
 OUTPUT_FILE="$ROOT_DIR/COMPATIBILITY.md"
 
 # Check for yq
@@ -37,7 +37,7 @@ TODAY=$(date +%Y-%m-%d)
 cat > "$OUTPUT_FILE" << EOF
 # OttoChain Compatibility Matrix
 
-> Auto-generated from \`versions.yml\` — do not edit manually.
+> Auto-generated from \`versions.yaml\` — do not edit manually.
 > Run \`scripts/generate-compatibility.sh\` to update.
 > Generated: $TODAY
 
@@ -120,7 +120,7 @@ curl -s http://localhost:9200/node/info | jq '.version'
 
 ---
 
-*See [versions.yml](./versions.yml) for the source of truth.*
+*See [versions.yaml](./versions.yaml) for the source of truth.*
 EOF
 
 echo "Generated $OUTPUT_FILE"

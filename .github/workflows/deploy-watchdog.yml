@@ -1,0 +1,94 @@
+name: Deploy Watchdog (Monitoring)
+
+# DEPRECATED: Watchdog + monitoring are now part of the unified services stack.
+# This workflow exists for backward compatibility with deploy-full.yml.
+# All containers are managed by deploy-services.yml in a single compose stack.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'scratch'
+        type: choice
+        options:
+          - scratch
+          - beta
+          - staging
+          - prod
+      include_exporters:
+        description: 'Include Prometheus exporters'
+        required: false
+        default: true
+        type: boolean
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      include_exporters:
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  deploy:
+    name: Verify Watchdog (Unified Stack)
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup SSH
+        uses: ./.github/actions/setup-ssh
+        with:
+          ssh_key: ${{ secrets.HETZNER_SSH_KEY }}
+          services_ip: ${{ secrets.HETZNER_SERVICES_IP }}
+          hosts: services
+
+      - name: Verify watchdog is running in unified stack
+        run: |
+          echo "ℹ️ Watchdog + monitoring are now part of the unified services stack."
+          echo "   Managed by deploy-services.yml at /opt/ottochain-services/"
+          echo ""
+
+          # Verify all monitoring components are running
+          COMPONENTS="watchdog prometheus grafana loki alertmanager promtail node-exporter postgres-exporter redis-exporter"
+          ALL_OK=true
+
+          for comp in $COMPONENTS; do
+            status=$(ssh services "docker inspect $comp --format '{{.State.Status}}'" 2>/dev/null || echo "not found")
+            if [ "$status" = "running" ]; then
+              echo "✅ $comp: running"
+            else
+              echo "⚠️ $comp: $status"
+              ALL_OK=false
+            fi
+          done
+
+          if [ "$ALL_OK" = "true" ]; then
+            echo ""
+            echo "✅ All monitoring components healthy in unified stack"
+          else
+            echo ""
+            echo "⚠️ Some components not running — check deploy-services.yml output"
+            exit 1
+          fi
+
+      - name: Summary
+        run: |
+          echo "## 🔍 Monitoring Verification" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Watchdog and monitoring are managed by the **unified services stack**." >> $GITHUB_STEP_SUMMARY
+          echo "See deploy-services.yml for the single docker-compose.yml." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          for comp in watchdog prometheus grafana loki alertmanager promtail; do
+            status=$(ssh services "docker inspect $comp --format '{{.State.Status}}'" 2>/dev/null || echo "not found")
+            ICON="✅"; [ "$status" != "running" ] && ICON="⚠️"
+            echo "| $ICON $comp | $status |" >> $GITHUB_STEP_SUMMARY
+          done

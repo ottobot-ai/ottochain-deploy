@@ -1,45 +1,37 @@
-# Staging Environment - Pre-Production Validation
-# Source: pinned versions (release candidates)
-# Auto-deploy: manual promotion from beta
+# Staging Environment - Pre-production validation
+# Source: release candidates
+# Auto-deploy: on RC tags
+#
+# Infrastructure stored in secret: STAGING_INFRASTRUCTURE
 
 name: staging
-mode: version
+mode: release
 auto_deploy: false
 
 sources:
   tessellation:
     type: upstream
-    version: v4.0.0-rc.2
-    
-  metakit:
-    type: upstream
-    version: main  # TODO: pin to version when available
-    
+    repo: Constellation-Labs/tessellation
+    ref: main
+
   ottochain:
     type: core
-    version: "0.6.0"
-    
+    repo: scasplte2/ottochain
+    ref: main
+
   sdk:
     type: ecosystem
-    version: "0.2.1"
-    
+    repo: ottobot-ai/ottochain-sdk
+    ref: main
+
   services:
     type: ecosystem
-    version: "0.1.0"
-    
+    repo: ottobot-ai/ottochain-services
+    ref: main
+
   explorer:
     type: ecosystem
-    version: "0.1.0"
-    
-  monitoring:
-    type: ecosystem
-    version: "0.1.0"
+    repo: ottobot-ai/ottochain-explorer
+    ref: main
 
-infrastructure:
-  cluster: null  # TBD - separate infrastructure
-  nodes: []
-  services_host: null
-
-# Promotion requires:
-# - All smoke tests pass on beta
-# - Manual approval
+# Infrastructure loaded from secret at runtime

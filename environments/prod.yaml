@@ -1,47 +1,38 @@
-# Production Environment - Live System
-# Source: pinned stable versions only
-# Auto-deploy: NEVER - manual promotion with approval
+# Production Environment
+# Source: tagged releases only
+# Auto-deploy: NEVER (manual approval required)
+#
+# Infrastructure stored in secret: PROD_INFRASTRUCTURE
 
 name: prod
-mode: version
+mode: release
 auto_deploy: false
+requires_approval: true
 
 sources:
   tessellation:
     type: upstream
-    version: v4.0.0  # Stable release only
-    
-  metakit:
-    type: upstream
-    version: null  # TODO: pin when stable
-    
+    repo: Constellation-Labs/tessellation
+    ref: main
+
   ottochain:
     type: core
-    version: null  # TODO: first prod release
-    
+    repo: scasplte2/ottochain
+    ref: main
+
   sdk:
     type: ecosystem
-    version: null
-    
+    repo: ottobot-ai/ottochain-sdk
+    ref: main
+
   services:
     type: ecosystem
-    version: null
-    
+    repo: ottobot-ai/ottochain-services
+    ref: main
+
   explorer:
     type: ecosystem
-    version: null
-    
-  monitoring:
-    type: ecosystem
-    version: null
+    repo: ottobot-ai/ottochain-explorer
+    ref: main
 
-infrastructure:
-  cluster: null  # TBD - production infrastructure
-  nodes: []
-  services_host: null
-
-# Promotion requires:
-# - Staging validated for minimum 48 hours
-# - All E2E tests pass
-# - Manual approval from James
-# - Backup of current state
+# Infrastructure loaded from secret at runtime

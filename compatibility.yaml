@@ -41,11 +41,11 @@ components:
       # Explorer talks to services API
       services: ">=0.1.0"
 
-  monitoring:
-    description: "Monitoring stack (Grafana dashboards, alerts)"
+  watchdog:
+    description: "Watchdog (condition detection, auto-restart, services monitoring)"
     type: tooling
     artifacts:
-      - github.com/ottobot-ai/ottochain-monitoring
+      - github.com/ottobot-ai/ottochain-watchdog
     requires: {}  # Standalone, no strict dependencies
 
 # Compatibility rules are semver ranges
