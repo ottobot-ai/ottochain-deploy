@@ -19,8 +19,13 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install semver
-        run: npm install -g semver
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Setup yq
         uses: mikefarah/yq@v4
@@ -72,7 +77,7 @@ jobs:
               echo "  → $DEP: need $RANGE, have $DEP_VERSION"
               
               # Use semver CLI for proper range checking
-              if ! semver -r "$RANGE" "$DEP_VERSION" > /dev/null 2>&1; then
+              if ! pnpm exec semver -r "$RANGE" "$DEP_VERSION" > /dev/null 2>&1; then
                 ERRORS="$ERRORS\n❌ $COMP requires $DEP $RANGE but versions.yaml has $DEP_VERSION"
               fi
             done

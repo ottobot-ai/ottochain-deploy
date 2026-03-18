@@ -138,11 +138,15 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Install Playwright
         run: |
-          npm init -y
-          npm install playwright
-          npx playwright install chromium --with-deps
+          pnpm add playwright
+          pnpm exec playwright install chromium --with-deps
 
       - name: Load environment config
         id: config
