@@ -1,0 +1,27 @@
+{
+  "name": "ottochain-deploy-compatibility-tests",
+  "version": "1.0.0",
+  "description": "Test suite for OttoChain ecosystem compatibility testing system",
+  "scripts": {
+    "test": "jest",
+    "test:tdd": "jest test/compatibility-system.test.js test/services-compatibility-workflow.test.js test/integration-test-script.test.js",
+    "test:watch": "jest --watch",
+    "lint": "eslint test/"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "js-yaml": "^4.1.0",
+    "@types/jest": "^29.5.5"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/test/**/*.test.js"
+    ],
+    "collectCoverageFrom": [
+      "scripts/**/*.js",
+      ".github/workflows/**/*.yml"
+    ],
+    "verbose": true
+  }
+}
