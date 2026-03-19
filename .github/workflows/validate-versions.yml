@@ -260,10 +260,15 @@ jobs:
               exit 1
             }
 
-          # Wait briefly for the run to appear, then capture its ID
-          sleep 5
-          RUN_ID=$(gh api "repos/ottobot-ai/ottochain-services/actions/runs?event=workflow_dispatch&branch=main" \
-            --jq ".workflow_runs | map(select(.name == \"Compatibility Check\")) | sort_by(.created_at) | last | .id")
+          # Wait for the run to appear (retry loop to handle GitHub API lag)
+          RUN_ID=""
+          for attempt in 1 2 3; do
+            sleep $((attempt * 2))
+            RUN_ID=$(gh api "repos/ottobot-ai/ottochain-services/actions/runs?event=workflow_dispatch&branch=main" \
+              --jq ".workflow_runs | map(select(.name == \"Compatibility Check\")) | sort_by(.created_at) | last | .id" 2>/dev/null || echo "")
+            [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ] && break
+            echo "  Attempt $attempt: run not yet visible, retrying..."
+          done
 
           if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
             echo "⚠️ Could not capture run ID — dispatch may have worked but poll skipped"
@@ -286,10 +291,10 @@ jobs:
           # Poll every 60s, timeout after 50m (well within GitHub's 6h job limit)
           MAX_POLLS=50
           for i in $(seq 1 $MAX_POLLS); do
-            STATUS=$(gh api "repos/ottobot-ai/ottochain-services/actions/runs/${RUN_ID}" \
-              --jq '.status' 2>/dev/null || echo "error")
-            CONCLUSION=$(gh api "repos/ottobot-ai/ottochain-services/actions/runs/${RUN_ID}" \
-              --jq '.conclusion // ""' 2>/dev/null || echo "")
+            RUN_DATA=$(gh api "repos/ottobot-ai/ottochain-services/actions/runs/${RUN_ID}" \
+              --jq '{status: .status, conclusion: (.conclusion // "")}' 2>/dev/null || echo '{"status":"error","conclusion":""}')
+            STATUS=$(echo "$RUN_DATA" | jq -r '.status')
+            CONCLUSION=$(echo "$RUN_DATA" | jq -r '.conclusion')
 
             echo "  Poll ${i}/${MAX_POLLS}: status=${STATUS} conclusion=${CONCLUSION}"
 
