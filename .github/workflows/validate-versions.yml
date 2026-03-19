@@ -10,6 +10,10 @@ jobs:
   validate:
     name: Validate Compatibility
     runs-on: ubuntu-latest
+    outputs:
+      metagraph_bumped: ${{ steps.detect.outputs.metagraph_bumped }}
+      pr_version: ${{ steps.detect.outputs.pr_version }}
+      base_version: ${{ steps.detect.outputs.base_version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -157,6 +161,25 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Detect metagraph version bump
+        id: detect
+        run: |
+          # Check if ottochain version changed in this PR vs. base branch
+          BASE_VERSION=$(git show origin/${{ github.base_ref }}:versions.yaml 2>/dev/null \
+            | yq '.components.ottochain.version' || echo "")
+          PR_VERSION=$(yq '.components.ottochain.version' versions.yaml)
+
+          echo "base_version=${BASE_VERSION}" >> $GITHUB_OUTPUT
+          echo "pr_version=${PR_VERSION}" >> $GITHUB_OUTPUT
+
+          if [ -n "$BASE_VERSION" ] && [ "$BASE_VERSION" != "$PR_VERSION" ]; then
+            echo "metagraph_bumped=true" >> $GITHUB_OUTPUT
+            echo "🔄 Metagraph version bump detected: ${BASE_VERSION} → ${PR_VERSION}"
+          else
+            echo "metagraph_bumped=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ No metagraph version bump in this PR"
+          fi
+
       - name: Summary
         run: |
           echo "## 🔍 Version Validation" >> $GITHUB_STEP_SUMMARY
@@ -172,3 +195,140 @@ jobs:
           else
             echo "### ✅ All Checks Passed" >> $GITHUB_STEP_SUMMARY
           fi
+          if [ "${{ steps.detect.outputs.metagraph_bumped }}" = "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 🧪 Compatibility Check" >> $GITHUB_STEP_SUMMARY
+            echo "Metagraph bump detected: \`${{ steps.detect.outputs.base_version }}\` → \`${{ steps.detect.outputs.pr_version }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "Real integration test dispatched — see the **compatibility-check** job below." >> $GITHUB_STEP_SUMMARY
+          fi
+
+  compatibility-dispatch:
+    name: Dispatch Compatibility Check
+    runs-on: ubuntu-latest
+    needs: validate
+    # Only run when a metagraph version bump is detected in this PR
+    if: needs.validate.outputs.metagraph_bumped == 'true'
+
+    # ── Auth note ───────────────────────────────────────────────────────
+    # Dispatching workflow_dispatch to another repo requires a token with
+    # actions:write scope on ottobot-ai/ottochain-services.
+    # The built-in GITHUB_TOKEN only has write on THIS repo (ottochain-deploy).
+    #
+    # Setup: Add RELEASE_TOKEN secret to ottochain-deploy repo.
+    # The token must have: actions:write + actions:read on ottochain-services.
+    # Contact @scasplte2 to provision via GitHub App or fine-grained PAT.
+    #
+    # If RELEASE_TOKEN is not configured, this job will be skipped with a
+    # warning (the validate job still runs normally).
+    permissions:
+      statuses: write
+      pull-requests: read
+
+    steps:
+      - name: Check RELEASE_TOKEN availability
+        id: token-check
+        run: |
+          if [ -z "${{ secrets.RELEASE_TOKEN }}" ]; then
+            echo "⚠️ RELEASE_TOKEN not configured — skipping cross-repo dispatch"
+            echo "To enable real compatibility testing:"
+            echo "  1. Create a GitHub App or fine-grained PAT with actions:write on ottochain-services"
+            echo "  2. Add it as RELEASE_TOKEN secret in ottochain-deploy repo settings"
+            echo "available=false" >> $GITHUB_OUTPUT
+          else
+            echo "available=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Dispatch compatibility-check to services
+        id: dispatch
+        if: steps.token-check.outputs.available == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          METAGRAPH_VERSION: ${{ needs.validate.outputs.pr_version }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          echo "🚀 Dispatching compatibility check: services@main ↔ metagraph v${METAGRAPH_VERSION}"
+
+          # Dispatch workflow_dispatch to services compatibility-check.yml
+          RESPONSE=$(gh api repos/ottobot-ai/ottochain-services/actions/workflows/compatibility-check.yml/dispatches \
+            --method POST \
+            --field "ref=main" \
+            --field "inputs[metagraph_version]=${METAGRAPH_VERSION}" \
+            --field "inputs[deploy_pr_number]=${PR_NUMBER}" \
+            --field "inputs[deploy_repo]=ottobot-ai/ottochain-deploy" \
+            2>&1) || {
+              echo "❌ Dispatch failed: $RESPONSE"
+              exit 1
+            }
+
+          # Wait briefly for the run to appear, then capture its ID
+          sleep 5
+          RUN_ID=$(gh api "repos/ottobot-ai/ottochain-services/actions/runs?event=workflow_dispatch&branch=main" \
+            --jq ".workflow_runs | map(select(.name == \"Compatibility Check\")) | sort_by(.created_at) | last | .id")
+
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            echo "⚠️ Could not capture run ID — dispatch may have worked but poll skipped"
+            echo "run_id=" >> $GITHUB_OUTPUT
+          else
+            echo "✓ Dispatched run: https://github.com/ottobot-ai/ottochain-services/actions/runs/${RUN_ID}"
+            echo "run_id=${RUN_ID}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Poll compatibility check result
+        if: steps.token-check.outputs.available == 'true' && steps.dispatch.outputs.run_id != ''
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+          METAGRAPH_VERSION: ${{ needs.validate.outputs.pr_version }}
+        run: |
+          echo "⏳ Polling services compatibility-check run ${RUN_ID}..."
+          echo "   (timeout: 50 minutes)"
+
+          # Poll every 60s, timeout after 50m (well within GitHub's 6h job limit)
+          MAX_POLLS=50
+          for i in $(seq 1 $MAX_POLLS); do
+            STATUS=$(gh api "repos/ottobot-ai/ottochain-services/actions/runs/${RUN_ID}" \
+              --jq '.status' 2>/dev/null || echo "error")
+            CONCLUSION=$(gh api "repos/ottobot-ai/ottochain-services/actions/runs/${RUN_ID}" \
+              --jq '.conclusion // ""' 2>/dev/null || echo "")
+
+            echo "  Poll ${i}/${MAX_POLLS}: status=${STATUS} conclusion=${CONCLUSION}"
+
+            if [ "$STATUS" = "completed" ]; then
+              if [ "$CONCLUSION" = "success" ]; then
+                echo ""
+                echo "✅ COMPATIBLE: services@main works with metagraph v${METAGRAPH_VERSION}"
+                echo "   Run: https://github.com/ottobot-ai/ottochain-services/actions/runs/${RUN_ID}"
+                exit 0
+              else
+                echo ""
+                echo "❌ INCOMPATIBLE: services@main FAILED against metagraph v${METAGRAPH_VERSION}"
+                echo "   Conclusion: ${CONCLUSION}"
+                echo "   Run: https://github.com/ottobot-ai/ottochain-services/actions/runs/${RUN_ID}"
+                echo ""
+                echo "This PR introduces a breaking change. Do not merge until services is updated."
+                exit 1
+              fi
+            fi
+
+            if [ $i -eq $MAX_POLLS ]; then
+              echo "⚠️ Timed out waiting for compatibility check (50m)"
+              echo "   Check manually: https://github.com/ottobot-ai/ottochain-services/actions/runs/${RUN_ID}"
+              exit 1
+            fi
+
+            sleep 60
+          done
+
+      - name: Summary (no token)
+        if: steps.token-check.outputs.available != 'true'
+        run: |
+          echo "## ⚠️ Compatibility Check Skipped" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Metagraph version bump from \`${{ needs.validate.outputs.base_version }}\` → \`${{ needs.validate.outputs.pr_version }}\` detected," >> $GITHUB_STEP_SUMMARY
+          echo "but **RELEASE_TOKEN** is not configured in this repo." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "To enable real integration testing on metagraph bumps:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Create a GitHub App or fine-grained PAT with \`actions:write\` on \`ottobot-ai/ottochain-services\`" >> $GITHUB_STEP_SUMMARY
+          echo "2. Add it as the \`RELEASE_TOKEN\` secret in \`ottobot-ai/ottochain-deploy\` repo settings" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "See \`COMPATIBILITY-TESTING.md\` for full setup instructions." >> $GITHUB_STEP_SUMMARY
