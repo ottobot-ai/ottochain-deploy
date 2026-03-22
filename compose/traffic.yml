@@ -17,6 +17,7 @@ services:
       GL0_URL: ${GL0_URL:-http://host.docker.internal:9000}
       INDEXER_URL: http://indexer:3031
       DATABASE_URL: ${DATABASE_URL}
+      MONITOR_URL: http://status:3032
       TRAFFIC_INTERVAL: ${TRAFFIC_INTERVAL:-5000}
       TRAFFIC_BATCH_SIZE: ${TRAFFIC_BATCH_SIZE:-3}
     depends_on:
