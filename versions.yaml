@@ -24,7 +24,7 @@ components:
     repo: "Constellation-Labs/tessellation"
   # OttoChain Services (TypeScript) - Docker image
   services:
-    version: "0.13.0"
+    version: "1.0.0"
     repo: "ottobot-ai/ottochain-services"
     image: "ghcr.io/ottobot-ai/ottochain-services"
   # OttoChain Explorer (TypeScript) - Docker image

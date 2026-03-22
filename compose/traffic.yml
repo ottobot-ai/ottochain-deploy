@@ -19,6 +19,7 @@ services:
       ML0_URL: ${ML0_URL:-http://host.docker.internal:9200}
       DL1_URL: ${DL1_URL:-http://host.docker.internal:9400}
       REDIS_URL: redis://redis:6379
+      DATABASE_URL: ${DATABASE_URL:-postgresql://ottochain:ottochain@postgres:5432/ottochain}
       # Traffic config
       MODE: ${TRAFFIC_MODE:-standard}
       TARGET_TPS: ${TRAFFIC_TPS:-2}

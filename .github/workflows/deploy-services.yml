@@ -190,6 +190,7 @@ jobs:
                 - REDIS_URL=${REDIS_URL:-redis://redis:6379}
                 - TRAFFIC_GEN_URL=http://traffic-gen:3033
                 - INDEXER_URL=http://indexer:3031
+                - DATABASE_URL=${DATABASE_URL}
                 - EXPLORER_URL=http://explorer:80
               depends_on:
                 - redis
@@ -215,6 +216,7 @@ jobs:
                 - METAGRAPH_DL1_URLS=${METAGRAPH_DL1_URLS}
                 - GL0_URL=${GL0_URL}
                 - INDEXER_URL=http://indexer:3031
+                - DATABASE_URL=${DATABASE_URL}
                 - TRAFFIC_INTERVAL=${TRAFFIC_INTERVAL:-5000}
                 - TRAFFIC_BATCH_SIZE=${TRAFFIC_BATCH_SIZE:-3}
               depends_on:
