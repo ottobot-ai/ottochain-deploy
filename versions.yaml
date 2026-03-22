@@ -29,7 +29,7 @@ components:
     image: "ghcr.io/ottobot-ai/ottochain-services"
   # OttoChain Explorer (TypeScript) - Docker image
   explorer:
-    version: "0.8.0"
+    version: "0.8.1"
     repo: "ottobot-ai/ottochain-explorer"
     image: "ghcr.io/ottobot-ai/ottochain-explorer"
   # OttoChain Watchdog (condition detection & auto-restart)
