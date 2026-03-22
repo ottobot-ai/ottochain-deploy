@@ -1,97 +1,102 @@
 # Application services - Gateway, Bridge, Indexer, Monitor
 # Usage: docker compose -f compose/base.yml -f compose/services.yml up -d
 #
-# Requires: SERVICES_IMAGE (or uses ghcr.io/ottobot-ai/ottochain-services:latest)
+# The ottochain-services Docker image uses the SERVICE env var to select
+# which package to run. All services share the same image.
 
 x-service-common: &service-common
   image: ${SERVICES_IMAGE:-ghcr.io/ottobot-ai/ottochain-services:latest}
   restart: unless-stopped
   networks:
     - ottochain
-  extra_hosts:
-    - "host.docker.internal:host-gateway"
+  environment: &service-env
+    NODE_ENV: ${NODE_ENV:-production}
+    DATABASE_URL: ${DATABASE_URL}
+    REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+    METAGRAPH_ML0_URL: ${METAGRAPH_ML0_URL:-${ML0_URL:-http://host.docker.internal:9200}}
+    METAGRAPH_DL1_URL: ${METAGRAPH_DL1_URL:-${DL1_URL:-http://host.docker.internal:9400}}
+    METAGRAPH_DL1_URLS: ${METAGRAPH_DL1_URLS:-}
+    GL0_URL: ${GL0_URL:-http://host.docker.internal:9000}
+    METAGRAPH_ID: ${METAGRAPH_ID:-}
 
 services:
   gateway:
     <<: *service-common
     container_name: gateway
-    command: ["node", "packages/gateway/dist/index.js"]
     ports:
       - "${GATEWAY_PORT:-4000}:4000"
     environment:
-      PORT: 4000
-      DATABASE_URL: postgresql://${POSTGRES_USER:-ottochain}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ottochain}
-      REDIS_URL: redis://redis:6379
+      <<: *service-env
+      SERVICE: gateway
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - postgres
+      - redis
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   bridge:
     <<: *service-common
     container_name: bridge
-    command: ["node", "packages/bridge/dist/index.js"]
     ports:
       - "${BRIDGE_PORT:-3030}:3030"
     environment:
-      PORT: 3030
-      DATABASE_URL: postgresql://${POSTGRES_USER:-ottochain}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ottochain}
-      REDIS_URL: redis://redis:6379
-      ML0_URL: ${ML0_URL:-http://host.docker.internal:9200}
-      DL1_URL: ${DL1_URL:-http://host.docker.internal:9400}
+      <<: *service-env
+      SERVICE: bridge
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - postgres
+      - redis
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3030/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   indexer:
     <<: *service-common
     container_name: indexer
-    command: ["node", "packages/indexer/dist/index.js"]
     ports:
       - "${INDEXER_PORT:-3031}:3031"
     environment:
-      PORT: 3031
-      DATABASE_URL: postgresql://${POSTGRES_USER:-ottochain}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ottochain}
-      REDIS_URL: redis://redis:6379
-      # Where to find ML0 for state queries and webhook registration
-      METAGRAPH_ML0_URL: ${ML0_URL:-http://host.docker.internal:9200}
-      # Callback URL for ML0 webhook push (must be reachable from ML0 host network)
-      # If not set, indexer falls back to polling only (slower)
-      INDEXER_CALLBACK_URL: ${INDEXER_CALLBACK_URL:-}
+      <<: *service-env
+      SERVICE: indexer
+      INDEXER_PORT: 3031
+      INDEXER_CALLBACK_URL: ${INDEXER_CALLBACK_URL:-http://indexer:3031/webhook/snapshot}
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - postgres
+      - redis
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3031/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-  monitor:
+  status:
     <<: *service-common
-    container_name: monitor
-    command: ["node", "packages/monitor/dist/index.js"]
+    container_name: status
     ports:
       - "${MONITOR_PORT:-3032}:3032"
     environment:
-      MONITOR_PORT: 3032
-      GL0_URLS: ${GL0_URLS:-http://host.docker.internal:9000}
-      ML0_URLS: ${ML0_URLS:-http://host.docker.internal:9200}
-      DL1_URLS: ${DL1_URLS:-http://host.docker.internal:9400}
+      <<: *service-env
+      SERVICE: monitor
+      MONITOR_AUTH: ${MONITOR_AUTH:-false}
+      GL0_URLS: ${GL0_URLS:-${GL0_URL:-http://host.docker.internal:9000}}
+      ML0_URLS: ${ML0_URLS:-${METAGRAPH_ML0_URL:-http://host.docker.internal:9200}}
+      DL1_URLS: ${DL1_URLS:-${METAGRAPH_DL1_URL:-http://host.docker.internal:9400}}
       BRIDGE_URL: http://bridge:3030
-      INDEXER_URL: http://indexer:3031
       GATEWAY_URL: http://gateway:4000
-      POLL_INTERVAL_MS: ${POLL_INTERVAL_MS:-10000}
-      # Hypergraph (Global L0) tracking. For scratch, same as GL0.
-      # For testnet: https://l0-lb-testnet.constellationnetwork.io
-      # For mainnet: https://l0-lb-mainnet.constellationnetwork.io
-      HYPERGRAPH_L0_URLS: ${HYPERGRAPH_L0_URLS:-${GL0_URLS:-http://host.docker.internal:9000}}
-      MONITOR_USER: ${MONITOR_USER:-admin}
-      MONITOR_PASS: ${MONITOR_PASS:-}
+      TRAFFIC_GEN_URL: http://traffic-gen:3033
+      INDEXER_URL: http://indexer:3031
+      EXPLORER_URL: http://explorer:80
     depends_on:
-      - bridge
-      - indexer
-      - gateway
+      - redis
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3032/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 networks:
   ottochain:
