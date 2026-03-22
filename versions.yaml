@@ -67,11 +67,11 @@ environments:
 deployed:
   scratch:
     ottochain: "0.7.13"
-    services: "v0.13.0"
-    explorer: "v0.8.0"
+    services: "v1.0.1"
+    explorer: "v0.8.1"
     watchdog: ""
-    timestamp: "2026-03-20T22:26:21Z"
-    workflow_run: "23364688479"
+    timestamp: "2026-03-22T18:11:46Z"
+    workflow_run: "23409024365"
   staging:
     ottochain: ""
     services: ""
