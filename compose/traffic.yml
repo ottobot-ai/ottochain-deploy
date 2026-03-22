@@ -1,42 +1,29 @@
 # Traffic generator - For testing/load simulation
 # Usage: docker compose -f compose/base.yml -f compose/services.yml -f compose/traffic.yml up -d
-#
-# Status API available at http://localhost:3033 when running
-# - GET /status - current stats (TPS, population, success rate)
-# - POST /start - start generating traffic
-# - POST /stop - stop generating traffic
-# - POST /config - update configuration
 
 services:
-  traffic-generator:
+  traffic-gen:
     image: ${SERVICES_IMAGE:-ghcr.io/ottobot-ai/ottochain-services:latest}
-    container_name: traffic-generator
+    container_name: traffic-gen
     restart: unless-stopped
-    command: ["node", "packages/traffic-generator/dist/index.js"]
     environment:
-      # Endpoints
-      BRIDGE_URL: ${BRIDGE_URL:-http://bridge:3030}
-      ML0_URL: ${ML0_URL:-http://host.docker.internal:9200}
-      DL1_URL: ${DL1_URL:-http://host.docker.internal:9400}
-      REDIS_URL: redis://redis:6379
-      # Traffic config
-      MODE: ${TRAFFIC_MODE:-standard}
-      TARGET_TPS: ${TRAFFIC_TPS:-2}
-      TARGET_POPULATION: ${TRAFFIC_AGENT_COUNT:-50}
-      WORKFLOW_WEIGHTS: ${TRAFFIC_WORKFLOW_WEIGHTS:-identity:30,token:25,fiber:20,marketplace:15,market:10}
-      # Status server
-      STATUS_PORT: 3033
-      # Set to 'false' to start traffic via API instead of auto-start
-      AUTO_START: ${TRAFFIC_AUTO_START:-true}
-    ports:
-      - "${TRAFFIC_STATUS_PORT:-3033}:3033"
+      SERVICE: traffic-generator
+      NODE_ENV: ${NODE_ENV:-production}
+      BRIDGE_URL: http://bridge:3030
+      METAGRAPH_ML0_URL: ${METAGRAPH_ML0_URL:-${ML0_URL:-http://host.docker.internal:9200}}
+      ML0_URL: ${METAGRAPH_ML0_URL:-${ML0_URL:-http://host.docker.internal:9200}}
+      METAGRAPH_DL1_URL: ${METAGRAPH_DL1_URL:-${DL1_URL:-http://host.docker.internal:9400}}
+      METAGRAPH_DL1_URLS: ${METAGRAPH_DL1_URLS:-}
+      GL0_URL: ${GL0_URL:-http://host.docker.internal:9000}
+      INDEXER_URL: http://indexer:3031
+      DATABASE_URL: ${DATABASE_URL}
+      TRAFFIC_INTERVAL: ${TRAFFIC_INTERVAL:-5000}
+      TRAFFIC_BATCH_SIZE: ${TRAFFIC_BATCH_SIZE:-3}
     depends_on:
       - bridge
-      - redis
+      - indexer
     networks:
       - ottochain
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
 networks:
   ottochain:
