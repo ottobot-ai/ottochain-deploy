@@ -71,7 +71,7 @@ jobs:
       explorer_version: ${{ steps.versions.outputs.explorer }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Determine environment
         id: env
@@ -199,7 +199,7 @@ jobs:
 
     steps:
       - name: Checkout main
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: main
 
@@ -259,7 +259,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install yq
         run: |
