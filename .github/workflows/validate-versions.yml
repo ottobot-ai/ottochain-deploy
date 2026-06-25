@@ -249,12 +249,16 @@ jobs:
           echo "🚀 Dispatching compatibility check: services@main ↔ metagraph v${METAGRAPH_VERSION}"
 
           # Dispatch workflow_dispatch to services compatibility-check.yml
+          # Use --raw-field for inputs: --field auto-types numeric-looking
+          # values (e.g. the PR number), but the services workflow declares
+          # these inputs as `type: string`, so a JSON number is rejected with
+          # HTTP 422 "Invalid value for input '...'".
           RESPONSE=$(gh api repos/ottobot-ai/ottochain-services/actions/workflows/compatibility-check.yml/dispatches \
             --method POST \
             --field "ref=main" \
-            --field "inputs[metagraph_version]=${METAGRAPH_VERSION}" \
-            --field "inputs[deploy_pr_number]=${PR_NUMBER}" \
-            --field "inputs[deploy_repo]=ottobot-ai/ottochain-deploy" \
+            --raw-field "inputs[metagraph_version]=${METAGRAPH_VERSION}" \
+            --raw-field "inputs[deploy_pr_number]=${PR_NUMBER}" \
+            --raw-field "inputs[deploy_repo]=ottobot-ai/ottochain-deploy" \
             2>&1) || {
               echo "❌ Dispatch failed: $RESPONSE"
               exit 1
